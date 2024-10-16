@@ -275,6 +275,9 @@ public:
       actionFn();
   }
 
+  std::vector<const RegisteredOperationName *>
+  addCanonicalizationPatternsForDialect(Dialect &dialect);
+
 private:
   /// Return true if the given dialect is currently loading.
   bool isDialectLoading(StringRef dialectNamespace);

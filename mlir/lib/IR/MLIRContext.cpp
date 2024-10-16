@@ -403,6 +403,23 @@ void MLIRContext::executeActionInternal(function_ref<void()> actionFn,
   getImpl().actionHandler(actionFn, action);
 }
 
+std::vector<const RegisteredOperationName *> 
+MLIRContext::addCanonicalizationPatternsForDialect(Dialect &dialect) {
+  std::vector<const RegisteredOperationName *> ops;
+  MLIRContext *ctx = dialect.getContext();
+
+  TypeID dialectTypeID = dialect.getTypeID();
+
+  for (const RegisteredOperationName &opName : ctx->getRegisteredOperations()) {
+    // Compare dialect TypeID instead of pointers
+    if (opName.getDialect().getTypeID() == dialectTypeID) {
+      ops.push_back(&opName);
+    }
+  }
+
+  return ops;
+}
+
 bool MLIRContext::hasActionHandler() { return (bool)getImpl().actionHandler; }
 
 //===----------------------------------------------------------------------===//
