@@ -40,6 +40,7 @@ public:
   void renameFunctionMainClosure(Module*, std::string);
   void renameCaller(Module*);
   void renameCallee(Module*);
+  void cloneAndReplaceFunc(Module*);
   void renameRealCallee(Function* MainFunc, std::string NewCalleeName);
 };
 

@@ -8,6 +8,7 @@
 
 #include "llvm/Transforms/Utils/MergeGoCFunc.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 
 using namespace llvm;
@@ -22,13 +23,17 @@ static cl::opt<bool>
     RenameCalleeRra("rename-callee-rra", cl::init(false),
                     cl::desc("Rename the Go callee functions"));
 
+static cl::opt<bool>
+    MergeCalleeRra("merge-callee-rra", cl::init(false),
+                    cl::desc("Merge the given callee functions"));
+
 static cl::opt<std::string> CallerNameRra("caller-name-rra", cl::Hidden,
                                           cl::desc("Caller function name"),
                                           cl::init(""));
 
 static cl::opt<std::string> CalleeNameRra("callee-name-rra", cl::Hidden,
-                                           cl::desc("Callee function name"),
-                                           cl::init(""));
+                                          cl::desc("Callee function name"),
+                                          cl::init(""));
 
 PreservedAnalyses MergeGoCFuncPass::run(Module &M, ModuleAnalysisManager &AM) {
   bool Changed = false;
@@ -46,6 +51,11 @@ PreservedAnalyses MergeGoCFuncPass::run(Module &M, ModuleAnalysisManager &AM) {
     renameCallee(&M);
     Changed = true;
   }
+  else if (MergeCalleeRra) {
+    cloneAndReplaceFunc(&M);
+    Changed = true;
+  }
+
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
 }
 
@@ -79,6 +89,33 @@ void MergeGoCFuncPass::renameCallee(Module *M) {
   renameRealCallee(MainFunc, "main_2nd_for_" + CalleeNameRra);
   MainFunc->setName("main_for_" + CalleeNameRra);
   renameFunctionMainClosure(M, CalleeNameRra);
+}
+
+void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
+  Function *MainFunc = M->getFunction("main");
+  if (!MainFunc) {
+    errs() << "Function 'main' not found!\n";
+    return;
+  }
+
+  ValueToValueMapTy VMap;
+  std::string NewFuncName = MainFunc->getName().str() + "_callee";
+  FunctionType *FuncType = MainFunc->getFunctionType();
+  GlobalValue::LinkageTypes Linkage = MainFunc->getLinkage();
+  Function *newCalleeFunc = Function::Create(FuncType, Linkage, NewFuncName, M);
+
+  Function::arg_iterator DestI = newCalleeFunc->arg_begin();
+  for (const Argument &Arg : MainFunc->args()) {
+    DestI->setName(Arg.getName());
+    VMap[&Arg] = &*DestI++;
+  }
+
+  SmallVector<ReturnInst *, 8> Returns;
+  CloneFunctionInto(newCalleeFunc, MainFunc, VMap,
+                    CloneFunctionChangeType::LocalChangesOnly, Returns);
+  errs() << "Function '" << MainFunc->getName() << "' cloned to '"
+         << newCalleeFunc->getName() << "'\n";
+  return;
 }
 
 void MergeGoCFuncPass::renameRealCallee(Function *MainFunc,
