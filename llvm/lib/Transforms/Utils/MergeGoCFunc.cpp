@@ -98,23 +98,34 @@ void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
     return;
   }
 
-  ValueToValueMapTy VMap;
-  std::string NewFuncName = MainFunc->getName().str() + "_callee";
-  FunctionType *FuncType = MainFunc->getFunctionType();
-  GlobalValue::LinkageTypes Linkage = MainFunc->getLinkage();
-  Function *newCalleeFunc = Function::Create(FuncType, Linkage, NewFuncName, M);
+  LLVMContext &Context = M->getContext();
+  std::vector<Type *> ParamTypes;
+  ParamTypes.push_back(Type::getInt8PtrTy(Context));
+  ParamTypes.push_back(Type::getInt8PtrTy(Context));
 
-  Function::arg_iterator DestI = newCalleeFunc->arg_begin();
-  for (const Argument &Arg : MainFunc->args()) {
-    DestI->setName(Arg.getName());
-    VMap[&Arg] = &*DestI++;
-  }
+  FunctionType *NewFuncType =
+      FunctionType::get(MainFunc->getReturnType(), ParamTypes, false);
+
+  std::string NewFuncName = MainFunc->getName().str() + "_callee";
+  GlobalValue::LinkageTypes Linkage = MainFunc->getLinkage();
+
+  Function *newCalleeFunc =
+      Function::Create(NewFuncType, Linkage, NewFuncName, M);
+
+  auto ArgIter = newCalleeFunc->arg_begin();
+  ArgIter->setName("arg1");
+  (++ArgIter)->setName("arg2");
+
+  newCalleeFunc->copyAttributesFrom(MainFunc);
+
+  ValueToValueMapTy VMap;
 
   SmallVector<ReturnInst *, 8> Returns;
   CloneFunctionInto(newCalleeFunc, MainFunc, VMap,
                     CloneFunctionChangeType::LocalChangesOnly, Returns);
+
   errs() << "Function '" << MainFunc->getName() << "' cloned to '"
-         << newCalleeFunc->getName() << "'\n";
+         << newCalleeFunc->getName() << "' with two additional arguments.\n";
   return;
 }
 
