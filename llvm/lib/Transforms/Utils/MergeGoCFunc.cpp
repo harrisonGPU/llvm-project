@@ -15,43 +15,41 @@ using namespace llvm;
 
 #define DEBUG_TYPE "merge-go-c-func"
 
-static cl::opt<bool>
-    RenameCallerRra("rename-caller-rra", cl::init(false),
-                    cl::desc("Rename the Go caller functions"));
+static cl::opt<bool> RenameCallerGc("rename-caller-gc", cl::init(false),
+                                    cl::desc("Rename the Go caller functions"));
+
+static cl::opt<bool> RenameCalleeGc("rename-callee-gc", cl::init(false),
+                                    cl::desc("Rename the Go callee functions"));
 
 static cl::opt<bool>
-    RenameCalleeRra("rename-callee-rra", cl::init(false),
-                    cl::desc("Rename the Go callee functions"));
+    MergeCalleeGc("merge-callee-gc", cl::init(false),
+                  cl::desc("Merge the given callee functions"));
 
-static cl::opt<bool>
-    MergeCalleeRra("merge-callee-rra", cl::init(false),
-                    cl::desc("Merge the given callee functions"));
+static cl::opt<std::string> CallerNameGc("caller-name-rra", cl::Hidden,
+                                         cl::desc("Caller function name"),
+                                         cl::init(""));
 
-static cl::opt<std::string> CallerNameRra("caller-name-rra", cl::Hidden,
-                                          cl::desc("Caller function name"),
-                                          cl::init(""));
-
-static cl::opt<std::string> CalleeNameRra("callee-name-rra", cl::Hidden,
-                                          cl::desc("Callee function name"),
-                                          cl::init(""));
+static cl::opt<std::string> CalleeNameGc("callee-name-rra", cl::Hidden,
+                                         cl::desc("Callee function name"),
+                                         cl::init(""));
 
 PreservedAnalyses MergeGoCFuncPass::run(Module &M, ModuleAnalysisManager &AM) {
   bool Changed = false;
-  if (RenameCallerRra) {
-    if (CallerNameRra.empty()) {
-      llvm::errs()<<"RenameCaller Error: didn't specify caller function name\n";
+  if (RenameCallerGc) {
+    if (CallerNameGc.empty()) {
+      llvm::errs()
+          << "RenameCaller Error: didn't specify caller function name\n";
     }
     renameCaller(&M);
     Changed = true;
-  }
-  else if (RenameCalleeRra) {
-    if (CalleeNameRra.empty()) {
-        llvm::errs()<<"RenameCallee Error: didn't specify callee function name\n";
+  } else if (RenameCalleeGc) {
+    if (CalleeNameGc.empty()) {
+      llvm::errs()
+          << "RenameCallee Error: didn't specify callee function name\n";
     }
     renameCallee(&M);
     Changed = true;
-  }
-  else if (MergeCalleeRra) {
+  } else if (MergeCalleeGc) {
     cloneAndReplaceFunc(&M);
     Changed = true;
   }
@@ -59,24 +57,25 @@ PreservedAnalyses MergeGoCFuncPass::run(Module &M, ModuleAnalysisManager &AM) {
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
 }
 
-void MergeGoCFuncPass::renameFunctionMainClosure(Module* M, std::string Suffix) {
-    std::vector<Function*> MainFuncs;
-    for (Module::iterator F = M->begin(); F != M->end(); F++) {
-        Function* Func = dyn_cast<Function>(F);
-        if (Func->isIntrinsic())  
-            continue;
-        
-        std::string FuncName = Func->getName().str();
-        FuncName = FuncName + "_" + Suffix;
-        Func->setName(FuncName);
-    }
+void MergeGoCFuncPass::renameFunctionMainClosure(Module *M,
+                                                 std::string Suffix) {
+  std::vector<Function *> MainFuncs;
+  for (Module::iterator F = M->begin(); F != M->end(); F++) {
+    Function *Func = dyn_cast<Function>(F);
+    if (Func->isIntrinsic())
+      continue;
+
+    std::string FuncName = Func->getName().str();
+    FuncName = FuncName + "_" + Suffix;
+    Func->setName(FuncName);
+  }
 }
 
 void MergeGoCFuncPass::renameCaller(Module *M) {
-  std::string Suffix = CallerNameRra;
+  std::string Suffix = CallerNameGc;
   for (Module::iterator F = M->begin(); F != M->end(); F++) {
     Function *Func = dyn_cast<Function>(F);
-    if (Func->isIntrinsic())  
+    if (Func->isIntrinsic())
       continue;
     std::string FuncName = Func->getName().str();
     FuncName = FuncName + "_" + Suffix;
@@ -86,9 +85,9 @@ void MergeGoCFuncPass::renameCaller(Module *M) {
 
 void MergeGoCFuncPass::renameCallee(Module *M) {
   Function *MainFunc = M->getFunction("main");
-  renameRealCallee(MainFunc, "main_2nd_for_" + CalleeNameRra);
-  MainFunc->setName("main_for_" + CalleeNameRra);
-  renameFunctionMainClosure(M, CalleeNameRra);
+  renameRealCallee(MainFunc, "main_2nd_for_" + CalleeNameGc);
+  MainFunc->setName("main_for_" + CalleeNameGc);
+  renameFunctionMainClosure(M, CalleeNameGc);
 }
 
 void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
