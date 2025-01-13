@@ -25,11 +25,11 @@ static cl::opt<bool>
     MergeCalleeGc("merge-callee-gc", cl::init(false),
                   cl::desc("Merge the given callee functions"));
 
-static cl::opt<std::string> CallerNameGc("caller-name-rra", cl::Hidden,
+static cl::opt<std::string> CallerNameGc("caller-name-gc", cl::Hidden,
                                          cl::desc("Caller function name"),
                                          cl::init(""));
 
-static cl::opt<std::string> CalleeNameGc("callee-name-rra", cl::Hidden,
+static cl::opt<std::string> CalleeNameGc("callee-name-gc", cl::Hidden,
                                          cl::desc("Callee function name"),
                                          cl::init(""));
 
