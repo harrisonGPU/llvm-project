@@ -8,8 +8,11 @@
 
 #include "llvm/Transforms/Utils/MergeGoCFunc.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Support/raw_ostream.h"
+#include <vector>
 
 using namespace llvm;
 
@@ -24,6 +27,10 @@ static cl::opt<bool> RenameCalleeGc("rename-callee-gc", cl::init(false),
 static cl::opt<bool>
     MergeCalleeGc("merge-callee-gc", cl::init(false),
                   cl::desc("Merge the given callee functions"));
+
+static cl::opt<bool>
+    ReplaceMakeRpc("replace-make-rpc", cl::init(false),
+                  cl::desc("Replace the given callee functions")); 
 
 static cl::opt<std::string> CallerNameGc("caller-name-gc", cl::Hidden,
                                          cl::desc("Caller function name"),
@@ -51,6 +58,10 @@ PreservedAnalyses MergeGoCFuncPass::run(Module &M, ModuleAnalysisManager &AM) {
     Changed = true;
   } else if (MergeCalleeGc) {
     cloneAndReplaceFunc(&M);
+    Changed = true;
+  }
+  else if (ReplaceMakeRpc) {
+    replaceMakeRpcCall(&M);
     Changed = true;
   }
 
@@ -125,6 +136,75 @@ void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
 
   errs() << "Function '" << MainFunc->getName() << "' cloned to '"
          << newCalleeFunc->getName() << "' with two additional arguments.\n";
+  return;
+}
+
+CallInst *MergeGoCFuncPass::getCallInstByCalledFunc(Function *callerFunc,
+                                                    Function *calledFunc) {
+  for (Function::iterator BBB = callerFunc->begin(), BBE = callerFunc->end();
+       BBB != BBE; ++BBB) {
+    for (BasicBlock::iterator IB = BBB->begin(), IE = BBB->end(); IB != IE;
+         IB++) {
+      if (isa<CallInst>(IB)) {
+        CallInst *ci = dyn_cast<CallInst>(IB);
+        Function *func = ci->getCalledFunction();
+        if (func == calledFunc)
+          return ci;
+      }
+    }
+  }
+  return NULL;
+}
+
+void MergeGoCFuncPass::replaceMakeRpcCall(Module *M) {
+  Function *makeRpc = M->getFunction("main.make__rpc");
+  if (makeRpc) {
+    errs() << "Function "<< makeRpc->getName() << " found. \n";
+  }
+  else {
+    errs() << "Function 'main.make__rpc' not found!\n";
+    return;
+  }
+
+  Function *wrapperGoToC = M->getFunction("main.wrapper__go2c");
+  if (wrapperGoToC) {
+    errs() << "Function "<< wrapperGoToC->getName() << " found. \n";
+  }
+  else {
+    errs() << "Function 'main.make__rpc' not found!\n";
+    return;
+  }
+
+  Function *callerFunc = M->getFunction("main.main");
+  CallInst *rpcInst = getCallInstByCalledFunc(callerFunc, makeRpc);
+  std::vector<Value *> arguments;
+  errs() << "NumOperands: " << rpcInst->getNumOperands() << "\n";
+  for (unsigned i = 0; i < rpcInst->getNumOperands(); i++) {
+    if (i == 0 || i == 3 || i == 4) {
+      Value *arg = rpcInst->getOperand(i);
+      arguments.push_back(arg);
+    }
+  }
+
+  CallInst *newCall =
+      CallInst::Create(wrapperGoToC->getFunctionType(), wrapperGoToC, arguments,
+                       "pointer2dummy", rpcInst);
+  newCall->setDebugLoc(rpcInst->getDebugLoc());
+  std::vector<llvm::User *> users;
+  for (const llvm::Use &use : rpcInst->uses()) {
+    llvm::User *user = use.getUser();
+    users.push_back(user);
+  }
+  for (auto user: users){
+    for (auto oi = user->op_begin(); oi != user->op_end(); oi++) {
+      Value *val = *oi;
+      Value *call_value = dyn_cast<Value>(rpcInst);
+      if (val == call_value){
+        *oi = dyn_cast<Value>(newCall);
+      }
+    }
+  }
+  rpcInst->eraseFromParent();
   return;
 }
 
