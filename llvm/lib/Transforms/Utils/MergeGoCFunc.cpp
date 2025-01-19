@@ -136,6 +136,8 @@ void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
 
   errs() << "Function '" << MainFunc->getName() << "' cloned to '"
          << newCalleeFunc->getName() << "' with two additional arguments.\n";
+
+  MainFunc->eraseFromParent(); 
   return;
 }
 
