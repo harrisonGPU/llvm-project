@@ -42,6 +42,7 @@ public:
   void renameCallee(Module*);
   void cloneAndReplaceFunc(Module*);
   void replaceMakeRpcCall(Module*);
+  void replaceDummy(Module*);
   CallInst* getCallInstByCalledFunc(Function*, Function*);
   void renameRealCallee(Function* MainFunc, std::string NewCalleeName);
 };
