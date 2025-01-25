@@ -176,36 +176,9 @@ void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
   }
 
   if (sendReturnCall && newRetVal) {
-    //sendReturnCall->eraseFromParent();
-
-    FunctionCallee printfFunc = M->getOrInsertFunction(
-        "printf",
-        FunctionType::get(IntegerType::getInt32Ty(Context),
-                          PointerType::get(Type::getInt8Ty(Context), 0), true));
-
-    Constant *formatStr = ConstantDataArray::getString(Context, "%s\n", true);
-    GlobalVariable *formatStrVar =
-        new GlobalVariable(*M, formatStr->getType(), true,
-                           GlobalValue::PrivateLinkage, formatStr, ".str");
-
-    Constant *zero = ConstantInt::get(Type::getInt32Ty(Context), 0);
-    Constant *formatIndices[] = {zero, zero};
-    Constant *formatStrPtr = ConstantExpr::getGetElementPtr(
-        formatStr->getType(), formatStrVar, formatIndices);
-
-    Constant *helloStr =
-        ConstantDataArray::getString(Context, "hello world\n", true);
-    GlobalVariable *helloStrVar =
-        new GlobalVariable(*M, helloStr->getType(), true,
-                           GlobalValue::PrivateLinkage, helloStr, ".str.hello");
-
-    Constant *helloStrPtr = ConstantExpr::getGetElementPtr(
-        helloStr->getType(), helloStrVar, formatIndices);
-
+    sendReturnCall->eraseFromParent();
     for (ReturnInst *ret : RetInsts) {
       IRBuilder<> builder(ret);
-      //builder.CreateCall(printfFunc, {formatStrPtr, newRetVal});
-      //builder.CreateCall(printfFunc, {helloStrPtr});
       ReturnInst::Create(newCalleeFunc->getContext(), newRetVal, ret);
       ret->eraseFromParent();
     }
@@ -237,12 +210,9 @@ void MergeGoCFuncPass::cloneAndReplaceFunc(Module *M) {
   }
 
   if (getArgCall) {
-    errs() << "get_arg_from_caller() is found.\n";
     unsigned numArgs = sendReturnCall->arg_size();
-    errs() << "Number of arguments is: " << numArgs << "\n";
     if (numArgs > 0) {
       Value *arg = sendReturnCall->getArgOperand(0);
-      errs() << "Argument name is: " << arg->getName() << "\n";
     } else {
       errs() << "Not enough arguments in get_arg_from_caller().\n";
     }
@@ -299,25 +269,20 @@ CallInst *MergeGoCFuncPass::getCallInstByCalledFunc(Function *callerFunc,
 
 void MergeGoCFuncPass::replaceMakeRpcCall(Module *M) {
   Function *makeRpc = M->getFunction("main.make__rpc");
-  if (makeRpc) {
-    errs() << "Function " << makeRpc->getName() << " found. \n";
-  } else {
+  if (!makeRpc) {
     errs() << "Function 'main.make__rpc' not found!\n";
     return;
   }
 
   Function *wrapperGoToC = M->getFunction("main.wrapper__go2c");
-  if (wrapperGoToC) {
-    errs() << "Function " << wrapperGoToC->getName() << " found. \n";
-  } else {
-    errs() << "Function 'main.make__rpc' not found!\n";
+  if (!wrapperGoToC) {
+    errs() << "Function 'main.wrapper__go2c' not found!\n";
     return;
   }
 
   Function *callerFunc = M->getFunction("main.main");
   CallInst *rpcInst = getCallInstByCalledFunc(callerFunc, makeRpc);
   std::vector<Value *> arguments;
-  errs() << "NumOperands: " << rpcInst->getNumOperands() << "\n";
   for (unsigned i = 0; i < rpcInst->getNumOperands(); i++) {
     if (i == 0 || i == 3 || i == 4) {
       Value *arg = rpcInst->getOperand(i);
@@ -349,32 +314,25 @@ void MergeGoCFuncPass::replaceMakeRpcCall(Module *M) {
 
 void MergeGoCFuncPass::replaceDummy(Module *M) {
   Function *dummyFun = M->getFunction("main.dummy");
-  if (dummyFun) {
-    errs() << "Function " << dummyFun->getName() << " found. \n";
-  } else {
+  if (!dummyFun) {
     errs() << "Function 'main.dummy' not found!\n";
     return;
   }
 
   Function *mainCallee = M->getFunction("main_callee");
-  if (mainCallee) {
-    errs() << "Function " << mainCallee->getName() << " found. \n";
-  } else {
+  if (!mainCallee) {
     errs() << "Function 'main_callee' not found!\n";
     return;
   }
 
   Function *callerFunc = M->getFunction("main.wrapper__go2c");
-  if (callerFunc) {
-    errs() << "Function " << callerFunc->getName() << " found. \n";
-  } else {
+  if (!callerFunc) {
     errs() << "Call Function 'main.wrapper__go2c' not found!\n";
     return;
   }
 
   CallInst *callDummy = getCallInstByCalledFunc(callerFunc, dummyFun);
   std::vector<Value *> arguments;
-  errs() << "NumOperands: " << callDummy->getNumOperands() << "\n";
   for (unsigned i = 0; i < callDummy->getNumOperands(); i++) {
     if (i == 1) {
       Value *arg = callDummy->getOperand(i);
