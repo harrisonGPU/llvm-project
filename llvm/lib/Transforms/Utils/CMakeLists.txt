@@ -1,5 +1,6 @@
 add_llvm_component_library(LLVMTransformUtils
   AddDiscriminators.cpp
+  MergeCFuncGo.cpp
   MergeGoCFunc.cpp
   AMDGPUEmitPrintf.cpp
   ASanStackFrameLayout.cpp
