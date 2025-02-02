@@ -9,42 +9,41 @@
 #ifndef LLVM_TRANSFORMS_UTILS_MERGEGOCFUNC_H
 #define LLVM_TRANSFORMS_UTILS_MERGEGOCFUNC_H
 
-#include "llvm/IR/PassManager.h"
+#include "llvm/ADT/IndexedMap.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/Pass.h"
-#include "llvm/Analysis/Passes.h"
-#include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/Passes.h"
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Mangler.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/ADT/IndexedMap.h"
-#include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/IR/Mangler.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/Demangle/Demangle.h"
-#include "llvm/Support/CommandLine.h"
 
 namespace llvm {
 
 class MergeGoCFuncPass : public PassInfoMixin<MergeGoCFuncPass> {
 public:
   PreservedAnalyses run(Module &F, ModuleAnalysisManager &AM);
-  void renameFunctionMainClosure(Module*, std::string);
-  void renameCaller(Module*);
-  void renameCallee(Module*);
-  void cloneAndReplaceFunc(Module*);
-  void replaceMakeRpcCall(Module*);
-  void replaceDummy(Module*);
-  CallInst* getCallInstByCalledFunc(Function*, Function*);
-  void renameRealCallee(Function* MainFunc, std::string NewCalleeName);
+  void renameFunctionMainClosure(Module *, std::string);
+  void renameCaller(Module *);
+  void renameCallee(Module *);
+  void cloneAndReplaceFunc(Module *);
+  void replaceMakeRpcCall(Module *);
+  void replaceDummy(Module *);
+  CallInst *getCallInstByCalledFunc(Function *, Function *);
+  void renameRealCallee(Function *MainFunc, std::string NewCalleeName);
 };
 
 } // namespace llvm
