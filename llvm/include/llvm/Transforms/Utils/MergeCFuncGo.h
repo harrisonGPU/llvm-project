@@ -38,10 +38,13 @@ public:
   PreservedAnalyses run(Module &F, ModuleAnalysisManager &AM);
   void ChangeLinkType(Module *);
   void MergeCallee(Module *);
+  void RenameCallee(Module *);
+  void RenameWrapper(Module *);
   Function *getCFunctionByDemangledName(Module *, std::string);
   CallInst *getCallInstByCalledFunc(Function *, Function *);
   CallInst *createCallWrapper(CallInst *, Function *);
   Function *createNewCalleeFunc(Function *, CallInst *);
+  void createCall2NewCallee(CallInst *, Function *);
 };
 
 } // namespace llvm

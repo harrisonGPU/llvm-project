@@ -14,14 +14,20 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
+#include <functional>
 #include <vector>
 
 using namespace llvm;
 
 #define DEBUG_TYPE "merge-c-func-go"
 
-static cl::opt<bool> ChangeLinkType_cs("change-link-type-cg", cl::init(false),
+static cl::opt<bool> ChangeLinkType_cg("change-link-type-cg", cl::init(false),
                                        cl::desc("change functions link type"));
+static cl::opt<bool> RenameCallee_cg("rename-callee-cg", cl::init(false),
+                                     cl::desc("rename the wrapper functions"));
+
+static cl::opt<bool> RenameWrapper_cg("rename-wrapper-cg", cl::init(false),
+                                      cl::desc("rename the wrapper functions"));
 
 static cl::opt<bool>
     MergeCallee_cs("merge-callee-cg", cl::init(false),
@@ -29,15 +35,101 @@ static cl::opt<bool>
 
 PreservedAnalyses MergeCFuncGoPass::run(Module &M, ModuleAnalysisManager &AM) {
   bool Changed = false;
-  if (ChangeLinkType_cs) {
+  if (ChangeLinkType_cg) {
     ChangeLinkType(&M);
     Changed = true;
   } else if (MergeCallee_cs) {
     MergeCallee(&M);
     Changed = true;
+  } else if (RenameCallee_cg) {
+    RenameCallee(&M);
+    Changed = true;
+  } else if (RenameWrapper_cg) {
+    RenameWrapper(&M);
+    Changed = true;
   }
 
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+}
+
+void MergeCFuncGoPass::RenameCallee(Module *M) {
+  Function *mainFunc = M->getFunction("main.main");
+  if (mainFunc) {
+    mainFunc->setName("main.callee");
+  }
+
+  std::string fileName = M->getModuleIdentifier();
+  size_t hash = std::hash<std::string>{}(fileName);
+
+  for (Function &F : *M) {
+    if ((F.getName() != "main.callee") &&
+        (F.getName() != "main.get__arg__from__caller") &&
+        (F.getName() != "main.send__return__value__to__caller") &&
+        (F.getName() != "main.function")) {
+      bool isIntrinsic = F.getName().startswith("llvm.");
+
+      if (!isIntrinsic) {
+        // std::string newName =
+        //     "func_" + std::to_string(hash) + "_" + F.getName().str();
+        // F.setName(newName);
+        // errs() << "Renaming function " << F.getName() << " to " << newName
+        //        << "\n";
+      }
+    }
+  }
+
+  // for (GlobalVariable &GV : M->globals()) {
+  //   std::string newName =
+  //       "global_" + std::to_string(hash) + "_" + GV.getName().str();
+
+  //   if (!GV.hasAttribute(Attribute::ImmArg)) {
+  //     GV.setName(newName);
+  //     // errs() << "Renaming global variable " << GV.getName() << " to " <<
+  //     // newName
+  //     //        << "\n";
+  //   }
+  // }
+
+  return;
+}
+
+void MergeCFuncGoPass::RenameWrapper(Module *M) {
+  Function *mainFunc = M->getFunction("main.main");
+  if (mainFunc) {
+    mainFunc->setName("main.wrapper");
+  }
+
+  std::string fileName = M->getModuleIdentifier();
+  size_t hash = std::hash<std::string>{}(fileName);
+
+  for (Function &F : *M) {
+    if ((F.getName() != "main.wrapper__c2go") &&
+        (F.getName() != "main.wrapper") && (F.getName() != "main.dummy")) {
+      bool isIntrinsic = F.getName().startswith("llvm.");
+
+      if (!isIntrinsic) {
+        std::string newName =
+            "func_" + std::to_string(hash) + "_" + F.getName().str();
+        F.setName(newName);
+        // errs() << "Renaming function " << F.getName() << " to " << newName
+        //        << "\n";
+      }
+    }
+  }
+
+  for (GlobalVariable &GV : M->globals()) {
+    std::string newName =
+        "global_" + std::to_string(hash) + "_" + GV.getName().str();
+
+    if (!GV.hasAttribute(Attribute::ImmArg)) {
+      GV.setName(newName);
+      // errs() << "Renaming global variable " << GV.getName() << " to " <<
+      // newName
+      //        << "\n";
+    }
+  }
+
+  return;
 }
 
 Function *MergeCFuncGoPass::getCFunctionByDemangledName(Module *M,
@@ -73,14 +165,60 @@ CallInst *MergeCFuncGoPass::getCallInstByCalledFunc(Function *callerFunc,
 CallInst *MergeCFuncGoPass::createCallWrapper(CallInst *rpcInst,
                                               Function *wrapperFunc) {
   std::vector<Value *> arguments;
-  std::vector<Type *> argumentTypes;
+  Module *M = rpcInst->getModule();
+
+  // Function *getGoContextFunc = M->getFunction("main.GetGoContext");
+  // if (!getGoContextFunc) {
+  //   errs() << "Error: Cannot find main.GetGoContext function!\n";
+  //   return nullptr;
+  // }
+
+  // Function *customInitFunc = M->getFunction("main.custom__init");
+  // if (!customInitFunc) {
+  //   errs() << "Error: Cannot find main.custom__init function!\n";
+  //   return nullptr;
+  // }
+  // IRBuilder<> Builder(rpcInst);
+  // Value *undef = UndefValue::get(Type::getInt8PtrTy(rpcInst->getContext()));
+  // Value *customInitCall = Builder.CreateCall(customInitFunc, {undef}, "custom_init_call");
+  // Builder.SetInsertPoint(rpcInst);
+  // Builder.Insert(customInitCall);
+
+  // Function *printfFunc = M->getFunction("printf");
+  // if (!printfFunc) {
+  //   std::vector<Type *> printfArgs(1,
+  //                                  Type::getInt8PtrTy(rpcInst->getContext()));
+  //   FunctionType *printfType = FunctionType::get(
+  //       Type::getInt32Ty(rpcInst->getContext()), printfArgs, true);
+  //   printfFunc =
+  //       Function::Create(printfType, Function::ExternalLinkage, "printf", M);
+  // }
+  // IRBuilder<> Builder(rpcInst);
+  // Value *strFormat = Builder.CreateGlobalStringPtr("%p\n");
+  // Builder.CreateCall(printfFunc, {strFormat, rpcInst->getOperand(1)});
+
   for (unsigned i = 0; i < rpcInst->getNumOperands(); i++) {
     Value *arg = rpcInst->getOperand(i);
-    if (i == 1 || i == 0) {
+    if (i == 0) {
+      Value *undef = UndefValue::get(Type::getInt8PtrTy(rpcInst->getContext()));
+      arguments.push_back(undef);
+    } else if (i == 1) {
       arguments.push_back(arg);
-      argumentTypes.push_back(arg->getType());
     }
   }
+
+  // IRBuilder<> Builder(rpcInst);
+  // Value *nullNest = Constant::getNullValue(Builder.getInt8PtrTy());
+  // Value *go_ctx = Builder.CreateCall(getGoContextFunc, {nullNest}, "go_ctx");
+
+  // for (unsigned i = 0; i < rpcInst->getNumOperands(); i++) {
+  //   if (i == 0) {
+  //     arguments.push_back(go_ctx);
+  //   } else if (i == 1) {
+  //     Value *arg = rpcInst->getOperand(i);
+  //     arguments.push_back(arg);
+  //   }
+  // }
 
   CallInst *newCall =
       CallInst::Create(wrapperFunc->getFunctionType(), wrapperFunc, arguments,
@@ -129,7 +267,7 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
 
   newFunc->copyAttributesFrom(calleeFunc);
   ValueToValueMapTy VMap;
-  SmallVector<ReturnInst*, 8> Returns;
+  SmallVector<ReturnInst *, 8> Returns;
 
   Function::arg_iterator DestI = newFunc->arg_begin();
   for (const Argument &J : calleeFunc->args()) {
@@ -137,7 +275,8 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
     VMap[&J] = &*DestI++;
   }
 
-  CloneFunctionInto(newFunc, calleeFunc, VMap, llvm::CloneFunctionChangeType::LocalChangesOnly, Returns);
+  CloneFunctionInto(newFunc, calleeFunc, VMap,
+                    llvm::CloneFunctionChangeType::LocalChangesOnly, Returns);
 
   CallInst *getArgCall = nullptr;
   for (BasicBlock &BB : *newFunc) {
@@ -164,26 +303,27 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
 
   Function::arg_iterator argIt = newFunc->arg_begin();
   ++argIt;
-  if (argIt == newFunc->arg_end()) {  
-    errs() << "Error: Not enough arguments in new function.\n";  
-    return nullptr;  
+  if (argIt == newFunc->arg_end()) {
+    errs() << "Error: Not enough arguments in new function.\n";
+    return nullptr;
   }
 
-  Argument* arg1 = &*argIt;
-  arg1->setName("arg_input_ptr");  
+  Argument *arg1 = &*argIt;
+  arg1->setName("arg_input_ptr");
   ++argIt;
-  if (argIt == newFunc->arg_end()) {  
-    errs() << "Error: Not enough arguments in new function.\n";  
-    return nullptr;  
-  } 
+  if (argIt == newFunc->arg_end()) {
+    errs() << "Error: Not enough arguments in new function.\n";
+    return nullptr;
+  }
 
-  Argument* arg2 = &*argIt;
+  Argument *arg2 = &*argIt;
   arg2->setName("arg_input_len");
-  Type* retNewType = getArgCall->getType(); // { i8*, i64 }  
-  Value* newArg = UndefValue::get(retNewType);
+  Type *retNewType = getArgCall->getType(); // { i8*, i64 }
+  Value *newArg = UndefValue::get(retNewType);
 
   IRBuilder<> Builder(getArgCall);
-  Value* newInsertValue1 = Builder.CreateInsertValue(newArg, arg1, {0}, "new_arg1");
+  Value *newInsertValue1 =
+      Builder.CreateInsertValue(newArg, arg1, {0}, "new_arg1");
   Value *newInsertValue2 =
       Builder.CreateInsertValue(newInsertValue1, arg2, {1}, "new_arg2");
 
@@ -229,14 +369,16 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
     return nullptr;
   }
 
-  Value* sendReturnCallArg1 = sendReturnCall->getArgOperand(1);
-  Value* sendReturnCallArg2 = sendReturnCall->getArgOperand(2);
-  Type* retType = newFunc->getReturnType();
-  Value* newRetVal = UndefValue::get(retType);
+  Value *sendReturnCallArg1 = sendReturnCall->getArgOperand(1);
+  Value *sendReturnCallArg2 = sendReturnCall->getArgOperand(2);
+  Type *retType = newFunc->getReturnType();
+  Value *newRetVal = UndefValue::get(retType);
 
   IRBuilder<> BuilderReturn(sendReturnCall);
-  newRetVal = BuilderReturn.CreateInsertValue(newRetVal, sendReturnCallArg1, {0}, "new_ret0");
-  newRetVal = BuilderReturn.CreateInsertValue(newRetVal, sendReturnCallArg2, {1}, "new_ret1");
+  newRetVal = BuilderReturn.CreateInsertValue(newRetVal, sendReturnCallArg1,
+                                              {0}, "new_ret0");
+  newRetVal = BuilderReturn.CreateInsertValue(newRetVal, sendReturnCallArg2,
+                                              {1}, "new_ret1");
 
   if (sendReturnCall && newRetVal) {
     sendReturnCall->eraseFromParent();
@@ -262,10 +404,58 @@ void MergeCFuncGoPass::ChangeLinkType(Module *M) {
 
   Function *wrapperGoToC = M->getFunction("main.wrapper__c2go");
   if (!wrapperGoToC) {
-    errs() << "Function 'main.wrapper__go2c' not found!\n";
+    errs() << "Function main.wrapper__go2c' not found!\n";
     return;
   }
   wrapperGoToC->setLinkage(llvm::GlobalValue::ExternalLinkage);
+
+  // Function *getGoContext = M->getFunction("main.GetGoContext");
+  // if (!getGoContext) {
+  //   errs() << "Function main.GetGoContext not found!\n";
+  //   return;
+  // }
+  // getGoContext->setLinkage(llvm::GlobalValue::ExternalLinkage);
+}
+
+void MergeCFuncGoPass::createCall2NewCallee(CallInst *dummyCall,
+                                            Function *newCalleeFunc) {
+  std::vector<Value *> arguments;
+  std::vector<Type *> argumentTypes;
+  Value *nestArg = dummyCall->getArgOperand(0);
+  arguments.push_back(nestArg);
+
+  for (unsigned i = 1; i < dummyCall->getNumOperands() - 1; ++i) {
+    Value *arg = dummyCall->getArgOperand(i);
+    arguments.push_back(arg);
+    errs() << "Parameter " << i << ": ";
+    if (arg->hasName()) {
+      errs() << arg->getName();
+    } else {
+      if (Constant *C = dyn_cast<Constant>(arg)) {
+        errs() << "Constant ";
+        C->print(errs(), true);
+      } else {
+        errs() << "Value ";
+        arg->print(errs(), true);
+      }
+    }
+    errs() << "\n";
+  }
+
+  CallInst *newCall =
+      CallInst::Create(newCalleeFunc, arguments, "new_callee_ret", dummyCall);
+
+  newCall->setCallingConv(dummyCall->getCallingConv());
+  newCall->setTailCallKind(dummyCall->getTailCallKind());
+  newCall->setAttributes(dummyCall->getAttributes());
+
+  if (MDNode *Dbg = dummyCall->getMetadata("dbg")) {
+    newCall->setMetadata("dbg", Dbg);
+  }
+
+  dummyCall->replaceAllUsesWith(newCall);
+
+  dummyCall->eraseFromParent();
 }
 
 void MergeCFuncGoPass::MergeCallee(Module *M) {
@@ -284,7 +474,7 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
 
   Function *wrapperCToGo = M->getFunction("main.wrapper__c2go");
   if (!wrapperCToGo) {
-    errs() << "Function 'main.wrapper__go2c' not found!\n";
+    errs() << "Function 'main.wrapper__c2go' not found!\n";
     return;
   }
 
@@ -322,4 +512,13 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
   }
 
   Function *newCalleeFunc = createNewCalleeFunc(calleeFunc, dummyCall);
+  createCall2NewCallee(dummyCall, newCalleeFunc);
+
+  if (rpcFunc->use_empty()) {
+    rpcFunc->eraseFromParent();
+    errs() << "make_rpc function has been removed from the module.\n";
+  } else {
+    errs()
+        << "make_rpc function is still used elsewhere and cannot be removed.\n";
+  }
 }
