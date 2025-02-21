@@ -40,11 +40,15 @@ public:
   void MergeCallee(Module *);
   void RenameCallee(Module *);
   void RenameWrapper(Module *);
+  void CreateNewMemory(Module *);
   Function *getCFunctionByDemangledName(Module *, std::string);
   CallInst *getCallInstByCalledFunc(Function *, Function *);
   CallInst *createCallWrapper(CallInst *, Function *);
   Function *createNewCalleeFunc(Function *, CallInst *);
   void createCall2NewCallee(CallInst *, Function *);
+  void insertBufferForConcat(CallInst *CI);
+  void insertBufferForConcatForSlicebyte(CallInst *CI);
+  void replaceCallsToClonedFunction(Module *M, Function *originalFunc, Function *clonedFunc);
 };
 
 } // namespace llvm

@@ -11,6 +11,7 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
@@ -33,6 +34,9 @@ static cl::opt<bool>
     MergeCallee_cs("merge-callee-cg", cl::init(false),
                    cl::desc("merge the given callee functions"));
 
+static cl::opt<bool> CreateNewMemory_cs("create-memory-cg", cl::init(false),
+                                        cl::desc("create a new memory"));
+
 PreservedAnalyses MergeCFuncGoPass::run(Module &M, ModuleAnalysisManager &AM) {
   bool Changed = false;
   if (ChangeLinkType_cg) {
@@ -47,6 +51,9 @@ PreservedAnalyses MergeCFuncGoPass::run(Module &M, ModuleAnalysisManager &AM) {
   } else if (RenameWrapper_cg) {
     RenameWrapper(&M);
     Changed = true;
+  } else if (CreateNewMemory_cs) {
+    CreateNewMemory(&M);
+    Changed = true;
   }
 
   return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
@@ -58,38 +65,78 @@ void MergeCFuncGoPass::RenameCallee(Module *M) {
     mainFunc->setName("main.callee");
   }
 
-  std::string fileName = M->getModuleIdentifier();
-  size_t hash = std::hash<std::string>{}(fileName);
+  // std::string fileName = M->getModuleIdentifier();
+  // size_t hash = std::hash<std::string>{}(fileName);
 
-  for (Function &F : *M) {
-    if ((F.getName() != "main.callee") &&
-        (F.getName() != "main.get__arg__from__caller") &&
-        (F.getName() != "main.send__return__value__to__caller") &&
-        (F.getName() != "main.function")) {
-      bool isIntrinsic = F.getName().startswith("llvm.");
+  // for (Function &F : *M) {
+  //   if ((F.getName() != "main.callee") &&
+  //       (F.getName() != "main.get__arg__from__caller") &&
+  //       (F.getName() != "main.send__return__value__to__caller") &&
+  //       (F.getName() != "main.function")) {
+  //     bool isIntrinsic = F.getName().startswith("llvm.");
 
-      if (!isIntrinsic) {
-        // std::string newName =
-        //     "func_" + std::to_string(hash) + "_" + F.getName().str();
-        // F.setName(newName);
-        // errs() << "Renaming function " << F.getName() << " to " << newName
-        //        << "\n";
-      }
-    }
-  }
-
-  // for (GlobalVariable &GV : M->globals()) {
-  //   std::string newName =
-  //       "global_" + std::to_string(hash) + "_" + GV.getName().str();
-
-  //   if (!GV.hasAttribute(Attribute::ImmArg)) {
-  //     GV.setName(newName);
-  //     // errs() << "Renaming global variable " << GV.getName() << " to " <<
-  //     // newName
-  //     //        << "\n";
+  //     if (!isIntrinsic) {
+  //       // std::string newName =
+  //       //     "func_" + std::to_string(hash) + "_" + F.getName().str();
+  //       // F.setName(newName);
+  //       // errs() << "Renaming function " << F.getName() << " to " << newName
+  //       //        << "\n";
+  //     }
   //   }
   // }
 
+  // // for (GlobalVariable &GV : M->globals()) {
+  // //   std::string newName =
+  // //       "global_" + std::to_string(hash) + "_" + GV.getName().str();
+
+  // //   if (!GV.hasAttribute(Attribute::ImmArg)) {
+  // //     GV.setName(newName);
+  // //     // errs() << "Renaming global variable " << GV.getName() << " to "
+  // <<
+  // //     // newName
+  // //     //        << "\n";
+  // //   }
+  // // }
+
+  return;
+}
+
+void MergeCFuncGoPass::CreateNewMemory(Module *M) {
+  Function *mainClone = M->getFunction("main.function");
+  if (!mainClone) {
+    errs() << "Function 'main.function' not found!\n";
+    return;
+  }
+  if (mainClone) {
+    for (auto &B : *mainClone) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (isa<CallInst>(I)) {
+          CallInst *callInst = cast<CallInst>(&I);
+          if (callInst->getCalledFunction() &&
+              (callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_end ||
+               callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_start)) {
+            I.eraseFromParent();
+          }
+        }
+      }
+    }
+  }
+  if (mainClone) {
+    for (auto &B : *mainClone) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          Function *calledFunc = CI->getCalledFunction();
+          if (calledFunc && calledFunc->getName() == "runtime.concatstrings") {
+            insertBufferForConcat(CI);
+          }
+        }
+      }
+    }
+  }
   return;
 }
 
@@ -180,8 +227,8 @@ CallInst *MergeCFuncGoPass::createCallWrapper(CallInst *rpcInst,
   // }
   // IRBuilder<> Builder(rpcInst);
   // Value *undef = UndefValue::get(Type::getInt8PtrTy(rpcInst->getContext()));
-  // Value *customInitCall = Builder.CreateCall(customInitFunc, {undef}, "custom_init_call");
-  // Builder.SetInsertPoint(rpcInst);
+  // Value *customInitCall = Builder.CreateCall(customInitFunc, {undef},
+  // "custom_init_call"); Builder.SetInsertPoint(rpcInst);
   // Builder.Insert(customInitCall);
 
   // Function *printfFunc = M->getFunction("printf");
@@ -244,6 +291,21 @@ CallInst *MergeCFuncGoPass::createCallWrapper(CallInst *rpcInst,
   return newCall;
 }
 
+void MergeCFuncGoPass::replaceCallsToClonedFunction(Module *M, Function *originalFunc, Function *clonedFunc) {
+  for (auto &F : *M) {
+      for (auto &B : F) {
+          for (auto &I : B) {
+              if (auto *CI = dyn_cast<CallInst>(&I)) {
+                  Function *calledFunc = CI->getCalledFunction();
+                  if (calledFunc && calledFunc == originalFunc) {
+                      CI->setCalledFunction(clonedFunc);
+                  }
+              }
+          }
+      }
+  }
+}
+
 Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
                                                 CallInst *dummyCall) {
   Module *M = calleeFunc->getParent();
@@ -263,7 +325,7 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
   Function *dummyFunc = dummyCall->getCalledFunction();
   FunctionType *dummyFuncType = dummyFunc->getFunctionType();
   Function *newFunc = Function::Create(dummyFuncType, calleeFunc->getLinkage(),
-                                       calleeFunc->getName() + ".cloned", M);
+                                       "calleeFromMain", M);
 
   newFunc->copyAttributesFrom(calleeFunc);
   ValueToValueMapTy VMap;
@@ -277,6 +339,14 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
 
   CloneFunctionInto(newFunc, calleeFunc, VMap,
                     llvm::CloneFunctionChangeType::LocalChangesOnly, Returns);
+  
+  replaceCallsToClonedFunction(M, calleeFunc, newFunc);
+
+  for (User *U : calleeFunc->users()) {
+    if (CallInst *callInst = dyn_cast<CallInst>(U)) {
+      callInst->setCalledFunction(newFunc);
+    }
+  }
 
   CallInst *getArgCall = nullptr;
   for (BasicBlock &BB : *newFunc) {
@@ -391,6 +461,7 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
     errs() << "Failed to find send_return_value_to_caller() or its argument.\n";
   }
 
+  calleeFunc->eraseFromParent();
   return newFunc;
 }
 
@@ -458,6 +529,54 @@ void MergeCFuncGoPass::createCall2NewCallee(CallInst *dummyCall,
   dummyCall->eraseFromParent();
 }
 
+void MergeCFuncGoPass::insertBufferForConcat(CallInst *CI) {
+  IRBuilder<> Builder(CI);
+  Value *arg1 = CI->getArgOperand(1);
+  Value *arg2 = CI->getArgOperand(2);
+
+  Type *i8Type = Type::getInt8Ty(CI->getContext());
+  Type *i8PtrType = Type::getInt8PtrTy(CI->getContext());
+
+  Function *mallocFunc = CI->getModule()->getFunction("malloc");
+
+  if (!mallocFunc) {
+    errs() << "Malloc function not found in the module!\n";
+    return;
+  }
+
+  Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 256));
+  Value *bufferPtr = Builder.CreateCall(mallocFunc, mallocArg, "malloc_buffer");
+  CI->setArgOperand(1, bufferPtr);
+
+  return;
+}
+
+void MergeCFuncGoPass::insertBufferForConcatForSlicebyte(CallInst *CI) {
+  IRBuilder<> Builder(CI);
+
+  Value *arg2 = CI->getArgOperand(2);
+
+  Type *i8Type = Type::getInt8Ty(CI->getContext());
+  Type *i8PtrType = Type::getInt8PtrTy(CI->getContext());
+
+  Function *mallocFunc = CI->getModule()->getFunction("malloc");
+
+  if (!mallocFunc) {
+    errs() << "Malloc function not found in the module!\n";
+    return;
+  }
+
+  Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 256));
+
+  Value *bufferPtr = Builder.CreateCall(mallocFunc, mallocArg, "malloc_buffer");
+
+  if (isa<ConstantPointerNull>(arg2)) {
+    CI->setArgOperand(2, bufferPtr);
+  }
+
+  return;
+}
+
 void MergeCFuncGoPass::MergeCallee(Module *M) {
   Function *callerFunc = M->getFunction("main");
   if (!callerFunc) {
@@ -492,6 +611,131 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
   CallInst *callWrapper = createCallWrapper(rpcInst, wrapperCToGo);
   if (!callWrapper) {
     llvm::errs() << "fail to create a call to wrapper\n";
+  }
+
+  if (wrapperCToGo) {
+    for (auto &B : *wrapperCToGo) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (isa<CallInst>(I)) {
+          CallInst *callInst = cast<CallInst>(&I);
+          if (callInst->getCalledFunction() &&
+              (callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_end ||
+               callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_start)) {
+            I.eraseFromParent();
+          }
+        }
+      }
+    }
+  }
+
+  Function *cFuncGoString = M->getFunction("main.goStringToCCharPointer");
+  if (!cFuncGoString) {
+    errs() << "Function 'main.goStringToCCharPointer' not found!\n";
+    return;
+  }
+
+  if (cFuncGoString) {
+    for (auto &B : *cFuncGoString) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (isa<CallInst>(I)) {
+          CallInst *callInst = cast<CallInst>(&I);
+          if (callInst->getCalledFunction() &&
+              (callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_end ||
+               callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_start)) {
+            I.eraseFromParent();
+          }
+        }
+      }
+    }
+  }
+
+  Function *goStringCFunc = M->getFunction("main.cCharPointerToGoString");
+  if (!goStringCFunc) {
+    errs() << "Function 'main.cCharPointerToGoString' not found!\n";
+    return;
+  }
+
+  if (goStringCFunc) {
+    for (auto &B : *goStringCFunc) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (isa<CallInst>(I)) {
+          CallInst *callInst = cast<CallInst>(&I);
+          if (callInst->getCalledFunction() &&
+              (callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_end ||
+               callInst->getCalledFunction()->getIntrinsicID() ==
+                   Intrinsic::lifetime_start)) {
+            I.eraseFromParent();
+          }
+        }
+      }
+    }
+  }
+
+  if (goStringCFunc) {
+    for (auto &B : *goStringCFunc) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          Function *calledFunc = CI->getCalledFunction();
+          if (calledFunc && calledFunc->getName() == "runtime.concatstrings") {
+            insertBufferForConcat(CI);
+          }
+        }
+      }
+    }
+  }
+
+  if (wrapperCToGo) {
+    for (auto &B : *wrapperCToGo) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          Function *calledFunc = CI->getCalledFunction();
+          if (calledFunc &&
+              calledFunc->getName() == "main.goStringToCCharPointer") {
+            IRBuilder<> Builder(CI);
+            Value *resultGoStringPtr = CI->getArgOperand(1);
+            Function *printfFunc = CI->getModule()->getFunction("printf");
+            if (!printfFunc) {
+              errs() << "Printf function not found in the module!\n";
+              return;
+            }
+
+            Constant *formatStr = Builder.CreateGlobalStringPtr("%s\n");
+            Builder.CreateCall(printfFunc, {formatStr, resultGoStringPtr});
+          }
+        }
+      }
+    }
+  }
+
+  Function *CFuncToGoSting = M->getFunction("main.goStringToCCharPointer");
+  if (!goStringCFunc) {
+    errs() << "Function 'main.goStringToCCharPointer' not found!\n";
+    return;
+  }
+
+  if (CFuncToGoSting) {
+    for (auto &B : *CFuncToGoSting) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          Function *calledFunc = CI->getCalledFunction();
+          if (calledFunc &&
+              calledFunc->getName() == "runtime.stringtoslicebyte") {
+            insertBufferForConcatForSlicebyte(CI);
+          }
+        }
+      }
+    }
   }
 
   Function *calleeFunc = M->getFunction("main.function");
