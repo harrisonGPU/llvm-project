@@ -234,36 +234,6 @@ CallInst *MergeCFuncGoPass::createCallWrapper(CallInst *rpcInst,
   std::vector<Value *> arguments;
   Module *M = rpcInst->getModule();
 
-  // Function *getGoContextFunc = M->getFunction("main.GetGoContext");
-  // if (!getGoContextFunc) {
-  //   errs() << "Error: Cannot find main.GetGoContext function!\n";
-  //   return nullptr;
-  // }
-
-  // Function *customInitFunc = M->getFunction("main.custom__init");
-  // if (!customInitFunc) {
-  //   errs() << "Error: Cannot find main.custom__init function!\n";
-  //   return nullptr;
-  // }
-  // IRBuilder<> Builder(rpcInst);
-  // Value *undef = UndefValue::get(Type::getInt8PtrTy(rpcInst->getContext()));
-  // Value *customInitCall = Builder.CreateCall(customInitFunc, {undef},
-  // "custom_init_call"); Builder.SetInsertPoint(rpcInst);
-  // Builder.Insert(customInitCall);
-
-  // Function *printfFunc = M->getFunction("printf");
-  // if (!printfFunc) {
-  //   std::vector<Type *> printfArgs(1,
-  //                                  Type::getInt8PtrTy(rpcInst->getContext()));
-  //   FunctionType *printfType = FunctionType::get(
-  //       Type::getInt32Ty(rpcInst->getContext()), printfArgs, true);
-  //   printfFunc =
-  //       Function::Create(printfType, Function::ExternalLinkage, "printf", M);
-  // }
-  // IRBuilder<> Builder(rpcInst);
-  // Value *strFormat = Builder.CreateGlobalStringPtr("%p\n");
-  // Builder.CreateCall(printfFunc, {strFormat, rpcInst->getOperand(1)});
-
   for (unsigned i = 0; i < rpcInst->getNumOperands(); i++) {
     Value *arg = rpcInst->getOperand(i);
     if (i == 0) {
@@ -273,19 +243,6 @@ CallInst *MergeCFuncGoPass::createCallWrapper(CallInst *rpcInst,
       arguments.push_back(arg);
     }
   }
-
-  // IRBuilder<> Builder(rpcInst);
-  // Value *nullNest = Constant::getNullValue(Builder.getInt8PtrTy());
-  // Value *go_ctx = Builder.CreateCall(getGoContextFunc, {nullNest}, "go_ctx");
-
-  // for (unsigned i = 0; i < rpcInst->getNumOperands(); i++) {
-  //   if (i == 0) {
-  //     arguments.push_back(go_ctx);
-  //   } else if (i == 1) {
-  //     Value *arg = rpcInst->getOperand(i);
-  //     arguments.push_back(arg);
-  //   }
-  // }
 
   CallInst *newCall =
       CallInst::Create(wrapperFunc->getFunctionType(), wrapperFunc, arguments,
@@ -380,7 +337,6 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
         if (calledFunc &&
             calledFunc->getName() == "main.get__arg__from__caller") {
           getArgCall = CI;
-          errs() << "getArgCall is found.\n";
           break;
         }
       }
@@ -449,7 +405,6 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
         if (calledFunc &&
             calledFunc->getName() == "main.send__return__value__to__caller") {
           sendReturnCall = CI;
-          errs() << "sendReturnCall is found.\n";
           break;
         }
       }
@@ -493,32 +448,16 @@ void MergeCFuncGoPass::ChangeLinkType(Module *M) {
   Function *mainFunc = M->getFunction("main.function");
   if (!mainFunc) {
     errs() << "Function 'main.function' not found!\n";
-    //return;
+    return;
   }
-  else
-    mainFunc->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  mainFunc->setLinkage(llvm::GlobalValue::ExternalLinkage);
 
   Function *wrapperGoToC = M->getFunction("main.wrapper__c2go");
   if (!wrapperGoToC) {
     errs() << "Function main.wrapper__go2c' not found!\n";
-    //return;
+    return;
   }
-  else
-    wrapperGoToC->setLinkage(llvm::GlobalValue::ExternalLinkage);
-
-  Function *calleeFromMain = M->getFunction("calleeFromMain");
-  if (!calleeFromMain) {
-    errs() << "Function calleeFromMain not found!\n";
-    //return;
-  }
-  else
-    calleeFromMain->setLinkage(llvm::GlobalValue::InternalLinkage);
-  // Function *getGoContext = M->getFunction("main.GetGoContext");
-  // if (!getGoContext) {
-  //   errs() << "Function main.GetGoContext not found!\n";
-  //   return;
-  // }
-  // getGoContext->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  wrapperGoToC->setLinkage(llvm::GlobalValue::ExternalLinkage);
 }
 
 void MergeCFuncGoPass::createCall2NewCallee(CallInst *dummyCall,
@@ -531,19 +470,6 @@ void MergeCFuncGoPass::createCall2NewCallee(CallInst *dummyCall,
   for (unsigned i = 1; i < dummyCall->getNumOperands() - 1; ++i) {
     Value *arg = dummyCall->getArgOperand(i);
     arguments.push_back(arg);
-    errs() << "Parameter " << i << ": ";
-    if (arg->hasName()) {
-      errs() << arg->getName();
-    } else {
-      if (Constant *C = dyn_cast<Constant>(arg)) {
-        errs() << "Constant ";
-        C->print(errs(), true);
-      } else {
-        errs() << "Value ";
-        arg->print(errs(), true);
-      }
-    }
-    errs() << "\n";
   }
 
   CallInst *newCall =
@@ -581,20 +507,6 @@ void MergeCFuncGoPass::insertBufferForConcat(CallInst *CI) {
   Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 64));
   Value *bufferPtr = Builder.CreateCall(mallocFunc, mallocArg, CI->getName() + "malloc_buffer");
 
-  // Find printf function in the module
-  // Function *printfFunc = CI->getModule()->getFunction("printf");
-  // if (!printfFunc) {
-  //   errs() << "Printf function not found in the module!\n";
-  //   return;
-  // }
-
-  // Create format string for printf
-  // Constant *formatStr = Builder.CreateGlobalStringPtr("Buffer address: %p\n");
-
-  // Create the printf call to print the buffer address
-  // Builder.CreateCall(printfFunc, {formatStr, bufferPtr});
-
-  // Replace the original argument with the new allocated buffer
   CI->setArgOperand(1, bufferPtr);
 
   return;
@@ -742,30 +654,6 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
     }
   }
 
-  if (wrapperCToGo) {
-    for (auto &B : *wrapperCToGo) {
-      for (auto it = B.begin(); it != B.end();) {
-        Instruction &I = *it++;
-        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-          Function *calledFunc = CI->getCalledFunction();
-          if (calledFunc &&
-              calledFunc->getName() == "main.goStringToCCharPointer") {
-            IRBuilder<> Builder(CI);
-            Value *resultGoStringPtr = CI->getArgOperand(1);
-            Function *printfFunc = CI->getModule()->getFunction("printf");
-            if (!printfFunc) {
-              errs() << "Printf function not found in the module!\n";
-              return;
-            }
-
-            Constant *formatStr = Builder.CreateGlobalStringPtr("%s\n");
-            Builder.CreateCall(printfFunc, {formatStr, resultGoStringPtr});
-          }
-        }
-      }
-    }
-  }
-
   Function *CFuncToGoSting = M->getFunction("main.goStringToCCharPointer");
   if (!goStringCFunc) {
     errs() << "Function 'main.goStringToCCharPointer' not found!\n";
@@ -809,48 +697,8 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
 
   if (rpcFunc->use_empty()) {
     rpcFunc->eraseFromParent();
-    errs() << "make_rpc function has been removed from the module.\n";
   } else {
     errs()
         << "make_rpc function is still used elsewhere and cannot be removed.\n";
-  }
-
-  Function *calleeCloneMain = M->getFunction("calleeFromMain");
-  if (calleeCloneMain) {
-    errs() << "Original linkage: " << calleeCloneMain->getLinkage() << "\n";
-    calleeCloneMain->setLinkage(GlobalValue::ExternalLinkage);
-    errs() << "New linkage: " << calleeCloneMain->getLinkage() << "\n";
-    // Iterate over the basic blocks in the function
-    for (auto &B : *calleeCloneMain) {
-      for (auto it = B.begin(); it != B.end();) {
-        Instruction &I = *it++;
-
-        // Check if the instruction is a call to 'runtime.concatstrings'
-        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-          Function *calledFunc = CI->getCalledFunction();
-          if (calledFunc && calledFunc->getName() == "runtime.concatstrings") {
-            // We assume that the return value is a struct { i8*, i64 }, extract the i8* (string)
-            Value *result = CI;  // This is the return value of 'runtime.concatstrings'
-
-            // Extract the string (i8*) from the returned struct
-            IRBuilder<> Builder(CI->getNextNode()); // Move Builder after the current instruction
-            Value *stringPtr = Builder.CreateExtractValue(result, 0, "string_ptr");
-
-            // Check if printf is declared, if not declare it
-            Function *printfFunc = M->getFunction("printf");
-            if (!printfFunc) {
-              errs() << "Printf function not found in the module!\n";
-              return;
-            }
-
-            // Create the format string for printf
-            Constant *formatStr = Builder.CreateGlobalStringPtr("Concatenated String: %s\n");
-
-            // Call printf to print the concatenated string
-            Builder.CreateCall(printfFunc, {formatStr, stringPtr});
-          }
-        }
-      }
-    }
   }
 }
