@@ -118,7 +118,7 @@ void MergeCFuncGoPass::CreateNewMemory(Module *M) {
                    Intrinsic::lifetime_end ||
                callInst->getCalledFunction()->getIntrinsicID() ==
                    Intrinsic::lifetime_start)) {
-            I.eraseFromParent();
+            // I.eraseFromParent();
           }
         }
       }
@@ -137,6 +137,26 @@ void MergeCFuncGoPass::CreateNewMemory(Module *M) {
       }
     }
   }
+
+  Function *dummyFunc = M->getFunction("main.dummy");
+  if (!mainClone) {
+    errs() << "Function 'main.dummy' not found!\n";
+    return;
+  }
+  if (dummyFunc) {
+    for (auto &B : *dummyFunc) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          Function *calledFunc = CI->getCalledFunction();
+          if (calledFunc && calledFunc->getName() == "runtime.concatstrings") {
+            insertBufferForConcat(CI);
+          }
+        }
+      }
+    }
+  }
+
   return;
 }
 
@@ -327,7 +347,7 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
   Function *newFunc = Function::Create(dummyFuncType, calleeFunc->getLinkage(),
                                        "calleeFromMain", M);
 
-  newFunc->copyAttributesFrom(calleeFunc);
+  //newFunc->copyAttributesFrom(calleeFunc);
   ValueToValueMapTy VMap;
   SmallVector<ReturnInst *, 8> Returns;
 
@@ -339,7 +359,11 @@ Function *MergeCFuncGoPass::createNewCalleeFunc(Function *calleeFunc,
 
   CloneFunctionInto(newFunc, calleeFunc, VMap,
                     llvm::CloneFunctionChangeType::LocalChangesOnly, Returns);
-  
+
+  newFunc->setLinkage(GlobalValue::ExternalLinkage);
+  newFunc->setVisibility(GlobalValue::DefaultVisibility);
+  newFunc->setDLLStorageClass(GlobalValue::DefaultStorageClass);
+
   replaceCallsToClonedFunction(M, calleeFunc, newFunc);
 
   for (User *U : calleeFunc->users()) {
@@ -469,17 +493,26 @@ void MergeCFuncGoPass::ChangeLinkType(Module *M) {
   Function *mainFunc = M->getFunction("main.function");
   if (!mainFunc) {
     errs() << "Function 'main.function' not found!\n";
-    return;
+    //return;
   }
-  mainFunc->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  else
+    mainFunc->setLinkage(llvm::GlobalValue::ExternalLinkage);
 
   Function *wrapperGoToC = M->getFunction("main.wrapper__c2go");
   if (!wrapperGoToC) {
     errs() << "Function main.wrapper__go2c' not found!\n";
-    return;
+    //return;
   }
-  wrapperGoToC->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  else
+    wrapperGoToC->setLinkage(llvm::GlobalValue::ExternalLinkage);
 
+  Function *calleeFromMain = M->getFunction("calleeFromMain");
+  if (!calleeFromMain) {
+    errs() << "Function calleeFromMain not found!\n";
+    //return;
+  }
+  else
+    calleeFromMain->setLinkage(llvm::GlobalValue::InternalLinkage);
   // Function *getGoContext = M->getFunction("main.GetGoContext");
   // if (!getGoContext) {
   //   errs() << "Function main.GetGoContext not found!\n";
@@ -518,7 +551,7 @@ void MergeCFuncGoPass::createCall2NewCallee(CallInst *dummyCall,
 
   newCall->setCallingConv(dummyCall->getCallingConv());
   newCall->setTailCallKind(dummyCall->getTailCallKind());
-  newCall->setAttributes(dummyCall->getAttributes());
+  // newCall->setAttributes(dummyCall->getAttributes());
 
   if (MDNode *Dbg = dummyCall->getMetadata("dbg")) {
     newCall->setMetadata("dbg", Dbg);
@@ -537,15 +570,31 @@ void MergeCFuncGoPass::insertBufferForConcat(CallInst *CI) {
   Type *i8Type = Type::getInt8Ty(CI->getContext());
   Type *i8PtrType = Type::getInt8PtrTy(CI->getContext());
 
+  // Find or create malloc function
   Function *mallocFunc = CI->getModule()->getFunction("malloc");
-
   if (!mallocFunc) {
     errs() << "Malloc function not found in the module!\n";
     return;
   }
 
-  Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 256));
-  Value *bufferPtr = Builder.CreateCall(mallocFunc, mallocArg, "malloc_buffer");
+  // Create malloc call to allocate memory for buffer (64 bytes)
+  Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 64));
+  Value *bufferPtr = Builder.CreateCall(mallocFunc, mallocArg, CI->getName() + "malloc_buffer");
+
+  // Find printf function in the module
+  // Function *printfFunc = CI->getModule()->getFunction("printf");
+  // if (!printfFunc) {
+  //   errs() << "Printf function not found in the module!\n";
+  //   return;
+  // }
+
+  // Create format string for printf
+  // Constant *formatStr = Builder.CreateGlobalStringPtr("Buffer address: %p\n");
+
+  // Create the printf call to print the buffer address
+  // Builder.CreateCall(printfFunc, {formatStr, bufferPtr});
+
+  // Replace the original argument with the new allocated buffer
   CI->setArgOperand(1, bufferPtr);
 
   return;
@@ -566,7 +615,7 @@ void MergeCFuncGoPass::insertBufferForConcatForSlicebyte(CallInst *CI) {
     return;
   }
 
-  Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 256));
+  Value *mallocArg = ConstantInt::get(CI->getContext(), APInt(64, 64));
 
   Value *bufferPtr = Builder.CreateCall(mallocFunc, mallocArg, "malloc_buffer");
 
@@ -624,7 +673,7 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
                    Intrinsic::lifetime_end ||
                callInst->getCalledFunction()->getIntrinsicID() ==
                    Intrinsic::lifetime_start)) {
-            I.eraseFromParent();
+            // I.eraseFromParent();
           }
         }
       }
@@ -648,7 +697,7 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
                    Intrinsic::lifetime_end ||
                callInst->getCalledFunction()->getIntrinsicID() ==
                    Intrinsic::lifetime_start)) {
-            I.eraseFromParent();
+            // I.eraseFromParent();
           }
         }
       }
@@ -672,7 +721,7 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
                    Intrinsic::lifetime_end ||
                callInst->getCalledFunction()->getIntrinsicID() ==
                    Intrinsic::lifetime_start)) {
-            I.eraseFromParent();
+            // I.eraseFromParent();
           }
         }
       }
@@ -764,5 +813,44 @@ void MergeCFuncGoPass::MergeCallee(Module *M) {
   } else {
     errs()
         << "make_rpc function is still used elsewhere and cannot be removed.\n";
+  }
+
+  Function *calleeCloneMain = M->getFunction("calleeFromMain");
+  if (calleeCloneMain) {
+    errs() << "Original linkage: " << calleeCloneMain->getLinkage() << "\n";
+    calleeCloneMain->setLinkage(GlobalValue::ExternalLinkage);
+    errs() << "New linkage: " << calleeCloneMain->getLinkage() << "\n";
+    // Iterate over the basic blocks in the function
+    for (auto &B : *calleeCloneMain) {
+      for (auto it = B.begin(); it != B.end();) {
+        Instruction &I = *it++;
+
+        // Check if the instruction is a call to 'runtime.concatstrings'
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          Function *calledFunc = CI->getCalledFunction();
+          if (calledFunc && calledFunc->getName() == "runtime.concatstrings") {
+            // We assume that the return value is a struct { i8*, i64 }, extract the i8* (string)
+            Value *result = CI;  // This is the return value of 'runtime.concatstrings'
+
+            // Extract the string (i8*) from the returned struct
+            IRBuilder<> Builder(CI->getNextNode()); // Move Builder after the current instruction
+            Value *stringPtr = Builder.CreateExtractValue(result, 0, "string_ptr");
+
+            // Check if printf is declared, if not declare it
+            Function *printfFunc = M->getFunction("printf");
+            if (!printfFunc) {
+              errs() << "Printf function not found in the module!\n";
+              return;
+            }
+
+            // Create the format string for printf
+            Constant *formatStr = Builder.CreateGlobalStringPtr("Concatenated String: %s\n");
+
+            // Call printf to print the concatenated string
+            Builder.CreateCall(printfFunc, {formatStr, stringPtr});
+          }
+        }
+      }
+    }
   }
 }
