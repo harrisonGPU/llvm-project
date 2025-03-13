@@ -113,6 +113,7 @@ add_math_entrypoint_object(dfmal)
 add_math_entrypoint_object(dfmaf128)
 
 add_math_entrypoint_object(dsqrtl)
+add_math_entrypoint_object(dsqrtf16)
 add_math_entrypoint_object(dsqrtf128)
 
 add_math_entrypoint_object(dsubl)

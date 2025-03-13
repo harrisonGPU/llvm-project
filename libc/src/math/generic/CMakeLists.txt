@@ -229,6 +229,17 @@ add_entrypoint_object(
     libc.src.__support.FPUtil.generic.sqrt
 )
 
+# add_entrypoint_object(
+#   dsqrtf16
+#   SRCS
+#     dsqrtf16.cpp
+#   HDRS
+#     ../dsqrtf16.h
+#   DEPENDS
+#     libc.src.__support.macros.properties.types
+#     libc.src.__support.FPUtil.generic.sqrt
+# )
+
 add_entrypoint_object(
   dsqrtf128
   SRCS

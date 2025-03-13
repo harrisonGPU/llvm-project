@@ -4960,6 +4960,18 @@ add_fp_unittest(
     libc.src.math.dsqrtl
 )
 
+# add_fp_unittest(
+#   dsqrtf16_test
+#   SUITE
+#     libc-math-smoke-tests
+#   SRCS
+#     dsqrtf16_test.cpp
+#   HDRS
+#     SqrtTest.h
+#   DEPENDS
+#     libc.src.math.dsqrtf16
+# )
+
 add_fp_unittest(
   dsqrtf128_test
   SUITE

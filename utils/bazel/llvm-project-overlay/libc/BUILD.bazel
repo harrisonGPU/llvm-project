@@ -2488,6 +2488,13 @@ libc_math_function(
 )
 
 libc_math_function(
+    name = "dsqrtf16",
+    additional_deps = [
+        ":__support_fputil_sqrt",
+    ],
+)
+
+libc_math_function(
     name = "dsqrtf128",
     additional_deps = [
         ":__support_fputil_sqrt",

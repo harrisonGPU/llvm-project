@@ -95,6 +95,11 @@ math_mpfr_test(
 )
 
 math_mpfr_test(
+    name = "dsqrtf16",
+    hdrs = ["SqrtTest.h"],
+)
+
+math_mpfr_test(
     name = "dsubl",
     hdrs = ["SubTest.h"],
 )
