@@ -3106,6 +3106,21 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  hypotf16
+  SRCS
+    hypotf16.cpp
+  HDRS
+    ../hypotf16.h
+  DEPENDS
+    libc.src.__support.FPUtil.double_double
+    libc.src.__support.FPUtil.fenv_impl
+    libc.src.__support.FPUtil.fp_bits
+    libc.src.__support.FPUtil.multiply_add
+    libc.src.__support.FPUtil.sqrt
+    libc.src.__support.macros.optimization
+)
+
+add_entrypoint_object(
   fdim
   SRCS
     fdim.cpp
