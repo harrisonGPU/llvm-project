@@ -284,6 +284,36 @@ void GCNHazardRecognizer::processBundle() {
   CurrCycleInstr = nullptr;
 }
 
+void GCNHazardRecognizer::reverseprocessBundle() {
+  MachineBasicBlock::instr_iterator MI =
+      std::next(CurrCycleInstr->getIterator());
+  MachineBasicBlock::instr_iterator E =
+      CurrCycleInstr->getParent()->instr_end();
+  // Check bundled MachineInstr's for hazards.
+  for (; MI != E && MI->isInsideBundle(); ++MI) {
+    CurrCycleInstr = &*MI;
+    unsigned WaitStates = PreEmitNoopsCommon(CurrCycleInstr);
+
+    if (IsHazardRecognizerMode) {
+      fixHazards(CurrCycleInstr);
+
+      insertNoopsInBundle(CurrCycleInstr, TII, WaitStates);
+    }
+
+    // It’s unnecessary to track more than MaxLookAhead instructions. Since we
+    // include the bundled MI directly after, only add a maximum of
+    // (MaxLookAhead - 1) noops to EmittedInstrs.
+    for (unsigned i = 0, e = std::min(WaitStates, MaxLookAhead - 1); i < e; ++i) {
+      if (!EmittedInstrs.empty())
+        EmittedInstrs.pop_back();
+    }
+
+    EmittedInstrs.push_back(CurrCycleInstr);
+    EmittedInstrs.resize(MaxLookAhead);
+  }
+  CurrCycleInstr = nullptr;
+}
+
 void GCNHazardRecognizer::runOnInstruction(MachineInstr *MI) {
   assert(IsHazardRecognizerMode);
 
@@ -423,7 +453,32 @@ void GCNHazardRecognizer::AdvanceCycle() {
 }
 
 void GCNHazardRecognizer::RecedeCycle() {
-  llvm_unreachable("hazard recognizer does not support bottom-up scheduling.");
+  if (!CurrCycleInstr) {
+    if (!EmittedInstrs.empty())
+      EmittedInstrs.pop_back();
+    return;
+  }
+
+  if (CurrCycleInstr->isBundle()) {
+    reverseprocessBundle();
+    return;
+  }
+
+  unsigned NumWaitStates = TII.getNumWaitStates(*CurrCycleInstr);
+  if (!NumWaitStates) {
+    CurrCycleInstr = nullptr;
+    return;
+  }
+
+  EmittedInstrs.push_back(CurrCycleInstr);
+  for (unsigned i = 1, e = std::min(NumWaitStates, getMaxLookAhead()); i < e;
+       ++i) {
+    if (!EmittedInstrs.empty())
+      EmittedInstrs.pop_back();
+  }
+
+  EmittedInstrs.resize(getMaxLookAhead());
+  CurrCycleInstr = nullptr;
 }
 
 //===----------------------------------------------------------------------===//
