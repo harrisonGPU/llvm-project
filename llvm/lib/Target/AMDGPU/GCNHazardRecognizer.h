@@ -69,12 +69,14 @@ private:
   // Advance over a MachineInstr bundle. Look for hazards in the bundled
   // instructions.
   void processBundle();
+  void reverseProcessBundle();
 
   // Run on an individual instruction in hazard recognizer mode. This can be
   // used on a newly inserted instruction before returning from PreEmitNoops.
   void runOnInstruction(MachineInstr *MI);
 
   int getWaitStatesSince(IsHazardFn IsHazard, int Limit);
+  int getWaitStatesUntil(IsHazardFn IsHazard, int Limit);
   int getWaitStatesSinceDef(unsigned Reg, IsHazardFn IsHazardDef, int Limit);
   int getWaitStatesSinceSetReg(IsHazardFn IsHazard, int Limit);
 
@@ -95,18 +97,30 @@ private:
   int checkNSAtoVMEMHazard(MachineInstr *MI);
   int checkFPAtomicToDenormModeHazard(MachineInstr *MI);
   void fixHazards(MachineInstr *MI);
+  void fixHazardsBottomUp(MachineInstr *MI);
   bool fixVcmpxPermlaneHazards(MachineInstr *MI);
+  bool fixVcmpxPermlaneHazardsBottomUp(MachineInstr *MI);
   bool fixVMEMtoScalarWriteHazards(MachineInstr *MI);
+  bool fixVMEMtoScalarWriteHazardsBottomUp(MachineInstr *MI);
   bool fixSMEMtoVectorWriteHazards(MachineInstr *MI);
+  bool fixSMEMtoVectorWriteHazardsBottomUp(MachineInstr *MI);
   bool fixVcmpxExecWARHazard(MachineInstr *MI);
+  bool fixVcmpxExecWARHazardBottomUp(MachineInstr *MI);
   bool fixLdsBranchVmemWARHazard(MachineInstr *MI);
+  bool fixLdsBranchVmemWARHazardBottomUp(MachineInstr *MI);
   bool fixLdsDirectVALUHazard(MachineInstr *MI);
+  bool fixLdsDirectVALUHazardBottomUp(MachineInstr *MI);
   bool fixLdsDirectVMEMHazard(MachineInstr *MI);
+  bool fixLdsDirectVMEMHazardBottomUp(MachineInstr *MI);
   bool fixVALUPartialForwardingHazard(MachineInstr *MI);
+  bool fixVALUPartialForwardingHazardBottomUp(MachineInstr *MI);
   bool fixVALUTransUseHazard(MachineInstr *MI);
+  bool fixVALUTransUseHazardBottomUp(MachineInstr *MI);
   bool fixWMMAHazards(MachineInstr *MI);
+  bool fixWMMAHazardsBottomUp(MachineInstr *MI);
   bool fixShift64HighRegBug(MachineInstr *MI);
   bool fixVALUMaskWriteHazard(MachineInstr *MI);
+  bool fixVALUMaskWriteHazardBottomUp(MachineInstr *MI);
   bool fixRequiredExportPriority(MachineInstr *MI);
 
   int checkMAIHazards(MachineInstr *MI);
