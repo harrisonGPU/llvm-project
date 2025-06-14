@@ -1040,8 +1040,28 @@ bool SILoadStoreOptimizer::offsetsCanBeCombined(CombineInfo &CI,
   if (CI.Offset == Paired.Offset)
     return false;
 
+  // Adjust element size for 16-bit single-component TBUFFER formats,
+  // which require 2-byte alignment rather than 4-byte.
+  unsigned EltSize = CI.EltSize;
+  auto Has8BitComponents = [&](unsigned Format) -> bool {
+    const auto *Info = AMDGPU::getGcnBufferFormatInfo(Format, STI);
+    return Info && Info->BitsPerComp == 8;
+  };
+
+  auto Has16BitComponents = [&](unsigned Format) -> bool {
+    const auto *Info = AMDGPU::getGcnBufferFormatInfo(Format, STI);
+    return Info && Info->BitsPerComp == 16;
+  };
+
+  if ((CI.InstClass == TBUFFER_LOAD || CI.InstClass == TBUFFER_STORE)) {
+    if (Has8BitComponents(CI.Format) && Has8BitComponents(Paired.Format))
+      EltSize = 1;
+    else if (Has16BitComponents(CI.Format) && Has16BitComponents(Paired.Format))
+      EltSize = 2;
+  }
+
   // This won't be valid if the offset isn't aligned.
-  if ((CI.Offset % CI.EltSize != 0) || (Paired.Offset % CI.EltSize != 0))
+  if ((CI.Offset % EltSize != 0) || (Paired.Offset % EltSize != 0))
     return false;
 
   if (CI.InstClass == TBUFFER_LOAD || CI.InstClass == TBUFFER_STORE) {
@@ -1059,26 +1079,41 @@ bool SILoadStoreOptimizer::offsetsCanBeCombined(CombineInfo &CI,
         Info0->NumFormat != Info1->NumFormat)
       return false;
 
-    // TODO: Should be possible to support more formats, but if format loads
-    // are not dword-aligned, the merged load might not be valid.
-    if (Info0->BitsPerComp != 32)
+    // AMDGPU hardware supports a maximum of 4 components per buffer access.
+    unsigned NewComp = CI.Width + Paired.Width;
+    if (NewComp > 4)
       return false;
 
-    if (getBufferFormatWithCompCount(CI.Format, CI.Width + Paired.Width, STI) == 0)
+    if (getBufferFormatWithCompCount(CI.Format, NewComp, STI) == 0)
       return false;
+
+    // Ensure combined access is aligned correctly
+    unsigned BytePerComp = Info0->BitsPerComp / 8;
+    unsigned CombinedEltSize = BytePerComp * NewComp;
+    uint32_t MinOffset = std::min(CI.Offset, Paired.Offset);
+    if (MinOffset % CombinedEltSize != 0)
+      return false;
+
+    return true;
   }
 
-  uint32_t EltOffset0 = CI.Offset / CI.EltSize;
-  uint32_t EltOffset1 = Paired.Offset / CI.EltSize;
+  uint32_t EltOffset0 = CI.Offset / EltSize;
+  uint32_t EltOffset1 = Paired.Offset / EltSize;
   CI.UseST64 = false;
   CI.BaseOff = 0;
 
   // Handle all non-DS instructions.
   if ((CI.InstClass != DS_READ) && (CI.InstClass != DS_WRITE)) {
     if (EltOffset0 + CI.Width != EltOffset1 &&
-            EltOffset1 + Paired.Width != EltOffset0)
+        EltOffset1 + Paired.Width != EltOffset0)
       return false;
+#if LLPC_BUILD_NPI
+    // Instructions with scale_offset modifier cannot be combined unless we
+    // also generate a code to scale the offset and reset that bit.
+    if (CI.CPol != Paired.CPol || (CI.CPol & AMDGPU::CPol::SCAL))
+#else  /* LLPC_BUILD_NPI */
     if (CI.CPol != Paired.CPol)
+#endif /* LLPC_BUILD_NPI */
       return false;
     if (CI.InstClass == S_LOAD_IMM || CI.InstClass == S_BUFFER_LOAD_IMM ||
         CI.InstClass == S_BUFFER_LOAD_SGPR_IMM) {
