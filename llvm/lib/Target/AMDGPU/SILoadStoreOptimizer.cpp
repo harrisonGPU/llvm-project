@@ -1040,8 +1040,20 @@ bool SILoadStoreOptimizer::offsetsCanBeCombined(CombineInfo &CI,
   if (CI.Offset == Paired.Offset)
     return false;
 
+  unsigned EltSize = CI.EltSize;
+  auto NeedsHalfStride = [&](unsigned Format) -> bool {
+    const auto *Info = AMDGPU::getGcnBufferFormatInfo(Format, STI);
+    return Info && Info->BitsPerComp == 16 && Info->NumComponents == 1;
+  };
+  if ((CI.InstClass == TBUFFER_LOAD || CI.InstClass == TBUFFER_STORE) &&
+      NeedsHalfStride(CI.Format) && NeedsHalfStride(Paired.Format))
+    EltSize = 2;
+
+  if (CI.Offset == Paired.Offset)
+    return false;
+
   // This won't be valid if the offset isn't aligned.
-  if ((CI.Offset % CI.EltSize != 0) || (Paired.Offset % CI.EltSize != 0))
+  if ((CI.Offset % EltSize != 0) || (Paired.Offset % EltSize != 0))
     return false;
 
   if (CI.InstClass == TBUFFER_LOAD || CI.InstClass == TBUFFER_STORE) {
@@ -1059,17 +1071,29 @@ bool SILoadStoreOptimizer::offsetsCanBeCombined(CombineInfo &CI,
         Info0->NumFormat != Info1->NumFormat)
       return false;
 
-    // TODO: Should be possible to support more formats, but if format loads
-    // are not dword-aligned, the merged load might not be valid.
-    if (Info0->BitsPerComp != 32)
+    unsigned NewComp = CI.Width + Paired.Width;
+    if (NewComp > 4)
       return false;
 
-    if (getBufferFormatWithCompCount(CI.Format, CI.Width + Paired.Width, STI) == 0)
+    
+    unsigned NewFmt =
+        getBufferFormatWithCompCount(CI.Format, NewComp, STI);
+    if (NewFmt == 0)
       return false;
+
+    if (Modify) {
+      // Make sure CI is the earlier (smaller offset) one
+      // if (Paired.Offset < CI.Offset)
+      //   std::swap(CI, Paired);
+
+      CI.Width = NewComp;
+      CI.Format = NewFmt;
+    }
+    return true;
   }
 
-  uint32_t EltOffset0 = CI.Offset / CI.EltSize;
-  uint32_t EltOffset1 = Paired.Offset / CI.EltSize;
+  uint32_t EltOffset0 = CI.Offset / EltSize;
+  uint32_t EltOffset1 = Paired.Offset / EltSize;
   CI.UseST64 = false;
   CI.BaseOff = 0;
 
@@ -1078,7 +1102,13 @@ bool SILoadStoreOptimizer::offsetsCanBeCombined(CombineInfo &CI,
     if (EltOffset0 + CI.Width != EltOffset1 &&
             EltOffset1 + Paired.Width != EltOffset0)
       return false;
+#if LLPC_BUILD_NPI
+    // Instructions with scale_offset modifier cannot be combined unless we
+    // also generate a code to scale the offset and reset that bit.
+    if (CI.CPol != Paired.CPol || (CI.CPol & AMDGPU::CPol::SCAL))
+#else /* LLPC_BUILD_NPI */
     if (CI.CPol != Paired.CPol)
+#endif /* LLPC_BUILD_NPI */
       return false;
     if (CI.InstClass == S_LOAD_IMM || CI.InstClass == S_BUFFER_LOAD_IMM ||
         CI.InstClass == S_BUFFER_LOAD_SGPR_IMM) {
