@@ -247,6 +247,16 @@ simplifyAMDGCNImageIntrinsic(const GCNSubtarget *ST,
                                        ArgTys[0] = User->getType();
                                      });
         }
+
+        if (auto *CvtPkrtzCall = dyn_cast<CallInst>(User)) {
+          if (CvtPkrtzCall->getIntrinsicID() == Intrinsic::amdgcn_cvt_pkrtz &&
+              isa<ConstantFP>(CvtPkrtzCall->getArgOperand(1))) {
+            return modifyIntrinsicCall(II, *CvtPkrtzCall, ImageDimIntr->Intr,
+                                       IC, [&](auto &Args, auto &ArgTys) {
+                                         ArgTys[0] = CvtPkrtzCall->getType();
+                                       });
+          }
+        }
       }
 
       // Only perform D16 folding if every user of the image sample is
