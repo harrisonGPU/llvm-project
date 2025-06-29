@@ -237,6 +237,10 @@ extern char &AMDGPUPreloadKernArgPrologLegacyID;
 void initializeAMDGPUPreloadKernelArgumentsLegacyPass(PassRegistry &);
 extern char &AMDGPUPreloadKernelArgumentsLegacyID;
 
+FunctionPass *createAMDGPUExtendDynamicIndexAlloca();
+void initializeAMDGPUExtendDynamicIndexAllocaPass(PassRegistry&);
+extern char &AMDGPUExtendDynamicIndexAllocaID;
+
 // Passes common to R600 and SI
 FunctionPass *createAMDGPUPromoteAlloca();
 void initializeAMDGPUPromoteAllocaPass(PassRegistry&);
@@ -245,6 +249,15 @@ extern char &AMDGPUPromoteAllocaID;
 FunctionPass *createAMDGPUPromoteAllocaToVector();
 void initializeAMDGPUPromoteAllocaToVectorPass(PassRegistry&);
 extern char &AMDGPUPromoteAllocaToVectorID;
+
+struct AMDGPUExtendDynamicIndexAllocaPass
+    : PassInfoMixin<AMDGPUExtendDynamicIndexAllocaPass> {
+  AMDGPUExtendDynamicIndexAllocaPass(TargetMachine &TM) : TM(TM) {}
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+
+private:
+  TargetMachine &TM;
+};
 
 struct AMDGPUPromoteAllocaPass : PassInfoMixin<AMDGPUPromoteAllocaPass> {
   AMDGPUPromoteAllocaPass(TargetMachine &TM) : TM(TM) {}

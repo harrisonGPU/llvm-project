@@ -91,6 +91,7 @@ add_llvm_target(AMDGPUCodeGen
   AMDGPUPreloadKernArgProlog.cpp
   AMDGPUPreloadKernelArguments.cpp
   AMDGPUPrintfRuntimeBinding.cpp
+  AMDGPUExtendDynamicIndexAlloca.cpp
   AMDGPUPromoteAlloca.cpp
   AMDGPUPromoteKernelArguments.cpp
   AMDGPURegBankCombiner.cpp

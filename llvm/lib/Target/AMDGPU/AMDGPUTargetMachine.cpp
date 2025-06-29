@@ -528,6 +528,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUPostLegalizerCombinerPass(*PR);
   initializeAMDGPUPreLegalizerCombinerPass(*PR);
   initializeAMDGPURegBankCombinerPass(*PR);
+  initializeAMDGPUExtendDynamicIndexAllocaPass(*PR);
   initializeAMDGPUPromoteAllocaPass(*PR);
   initializeAMDGPUPromoteAllocaToVectorPass(*PR);
   initializeAMDGPUCodeGenPreparePass(*PR);
@@ -1304,6 +1305,7 @@ void AMDGPUPassConfig::addIRPasses() {
   addPass(createAtomicExpandLegacyPass());
 
   if (TM.getOptLevel() > CodeGenOptLevel::None) {
+    addPass(createAMDGPUExtendDynamicIndexAlloca());
     addPass(createAMDGPUPromoteAlloca());
 
     if (isPassEnabled(EnableScalarIRPasses))
@@ -2044,6 +2046,7 @@ void AMDGPUCodeGenPassBuilder::addIRPasses(AddIRPass &addPass) const {
   addPass(AtomicExpandPass(&TM));
 
   if (TM.getOptLevel() > CodeGenOptLevel::None) {
+    addPass(AMDGPUExtendDynamicIndexAllocaPass(TM));
     addPass(AMDGPUPromoteAllocaPass(TM));
     if (isPassEnabled(EnableScalarIRPasses))
       addStraightLineScalarOptimizationPasses(addPass);
