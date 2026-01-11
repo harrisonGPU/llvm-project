@@ -86,10 +86,11 @@ static cl::opt<unsigned>
                             "when sorting profitable allocas"),
                    cl::init(4));
 
-// We support vector indices of the form (A * stride) + B
+// We support vector indices of the form ((A / div) * stride) + B
 // All parts are optional.
 struct GEPToVectorIndex {
   Value *VarIndex = nullptr;         // defaults to 0
+  ConstantInt *VarDiv = nullptr;     // defaults to 1
   ConstantInt *VarMul = nullptr;     // defaults to 1
   ConstantInt *ConstIndex = nullptr; // defaults to 0
   Value *Full = nullptr;
@@ -489,6 +490,9 @@ static Value *calculateVectorIndex(Value *Ptr, AllocaAnalysis &AA) {
       Result = I->second.VarIndex;
       Result = B.CreateSExtOrTrunc(Result, B.getInt32Ty());
 
+      if (I->second.VarDiv)
+        Result = B.CreateExactSDiv(Result, I->second.VarDiv);
+
       if (I->second.VarMul)
         Result = B.CreateMul(Result, I->second.VarMul);
     }
@@ -568,16 +572,33 @@ computeGEPToVectorIndex(GetElementPtrInst *GEP, AllocaInst *Alloca,
   const auto &VarOffset = VarOffsets.front();
   APInt OffsetQuot;
   APInt::sdivrem(VarOffset.second, VecElemSize, OffsetQuot, Rem);
-  if (Rem != 0 || OffsetQuot.isZero())
+  uint64_t DivForVarIndex = 0;
+  if (Rem != 0) {
+    uint64_t Scale = VarOffset.second.getZExtValue();
+    if (Scale == 0 || (VecElemSize % Scale) != 0)
+      return {};
+
+    DivForVarIndex = VecElemSize / Scale;
+    if (!isPowerOf2_64(DivForVarIndex))
+      return {};
+
+    KnownBits KB = computeKnownBits(VarOffset.first, DL);
+    if (KB.countMinTrailingZeros() < Log2_64(DivForVarIndex))
+      return {};
+  } else if (OffsetQuot.isZero()) {
     return {};
+  }
 
   Result.VarIndex = VarOffset.first;
   auto *OffsetType = dyn_cast<IntegerType>(Result.VarIndex->getType());
   if (!OffsetType)
     return {};
 
-  if (!OffsetQuot.isOne())
+  if (Rem != 0) {
+    Result.VarDiv = ConstantInt::get(Ctx, APInt(BW, DivForVarIndex));
+  } else if (!OffsetQuot.isOne()) {
     Result.VarMul = ConstantInt::get(Ctx, OffsetQuot.sextOrTrunc(BW));
+  }
 
   return Result;
 }
