@@ -86,11 +86,11 @@ static cl::opt<unsigned>
                             "when sorting profitable allocas"),
                    cl::init(4));
 
-// We support vector indices of the form ((A / div) * stride) + B
+// We support vector indices of the form ((A >> shift) * stride) + B
 // All parts are optional.
 struct GEPToVectorIndex {
   Value *VarIndex = nullptr;         // defaults to 0
-  ConstantInt *VarDiv = nullptr;     // defaults to 1
+  ConstantInt *VarShift = nullptr;   // defaults to 0
   ConstantInt *VarMul = nullptr;     // defaults to 1
   ConstantInt *ConstIndex = nullptr; // defaults to 0
   Value *Full = nullptr;
@@ -490,8 +490,8 @@ static Value *calculateVectorIndex(Value *Ptr, AllocaAnalysis &AA) {
       Result = I->second.VarIndex;
       Result = B.CreateSExtOrTrunc(Result, B.getInt32Ty());
 
-      if (I->second.VarDiv)
-        Result = B.CreateExactSDiv(Result, I->second.VarDiv);
+      if (I->second.VarShift)
+        Result = B.CreateAShr(Result, I->second.VarShift);
 
       if (I->second.VarMul)
         Result = B.CreateMul(Result, I->second.VarMul);
@@ -594,11 +594,10 @@ computeGEPToVectorIndex(GetElementPtrInst *GEP, AllocaInst *Alloca,
   if (!OffsetType)
     return {};
 
-  if (Rem != 0) {
-    Result.VarDiv = ConstantInt::get(Ctx, APInt(BW, DivForVarIndex));
-  } else if (!OffsetQuot.isOne()) {
+  if (Rem != 0)
+    Result.VarShift = ConstantInt::get(Ctx, APInt(BW, Log2_64(DivForVarIndex)));
+  else if (!OffsetQuot.isOne())
     Result.VarMul = ConstantInt::get(Ctx, OffsetQuot.sextOrTrunc(BW));
-  }
 
   return Result;
 }
