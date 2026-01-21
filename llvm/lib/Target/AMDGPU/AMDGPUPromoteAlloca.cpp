@@ -491,7 +491,7 @@ static Value *calculateVectorIndex(Value *Ptr, AllocaAnalysis &AA) {
       Result = B.CreateSExtOrTrunc(Result, B.getInt32Ty());
 
       if (I->second.VarShift)
-        Result = B.CreateAShr(Result, I->second.VarShift);
+        Result = B.CreateAShr(Result, I->second.VarShift, "", /*isExact*/ true);
 
       if (I->second.VarMul)
         Result = B.CreateMul(Result, I->second.VarMul);
