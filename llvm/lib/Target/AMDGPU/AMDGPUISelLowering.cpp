@@ -168,6 +168,12 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::ATOMIC_LOAD, MVT::bf16, Promote);
   AddPromotedToType(ISD::ATOMIC_LOAD, MVT::bf16, MVT::i16);
 
+  setOperationAction(ISD::ATOMIC_LOAD, MVT::v2f32, Promote);
+  AddPromotedToType(ISD::ATOMIC_LOAD, MVT::v2f32, MVT::i64);
+
+  setOperationAction(ISD::ATOMIC_LOAD, MVT::v4f32, Promote);
+  AddPromotedToType(ISD::ATOMIC_LOAD, MVT::v4f32, MVT::v4i32);
+
   setOperationAction(ISD::ATOMIC_STORE, MVT::f32, Promote);
   AddPromotedToType(ISD::ATOMIC_STORE, MVT::f32, MVT::i32);
 
@@ -636,7 +642,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
                        ISD::FABS,       ISD::AssertZext,
                        ISD::AssertSext, ISD::INTRINSIC_WO_CHAIN});
 
-  setMaxAtomicSizeInBitsSupported(64);
+  setMaxAtomicSizeInBitsSupported(128);
   setMaxDivRemBitWidthSupported(64);
   setMaxLargeFPConvertBitWidthSupported(64);
 }

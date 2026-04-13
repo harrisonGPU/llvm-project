@@ -703,6 +703,9 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::LOAD, MVT::v2f16, Promote);
     AddPromotedToType(ISD::LOAD, MVT::v2f16, MVT::i32);
 
+    setOperationAction(ISD::ATOMIC_LOAD, MVT::v2f16, Promote);
+    AddPromotedToType(ISD::ATOMIC_LOAD, MVT::v2f16, MVT::i32);
+
     setOperationAction(ISD::AND, MVT::v2i16, Promote);
     AddPromotedToType(ISD::AND, MVT::v2i16, MVT::i32);
     setOperationAction(ISD::OR, MVT::v2i16, Promote);
@@ -716,6 +719,12 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
     AddPromotedToType(ISD::LOAD, MVT::v4f16, MVT::v2i32);
     setOperationAction(ISD::LOAD, MVT::v4bf16, Promote);
     AddPromotedToType(ISD::LOAD, MVT::v4bf16, MVT::v2i32);
+
+    setOperationAction(ISD::ATOMIC_LOAD, MVT::v4f16, Promote);
+    AddPromotedToType(ISD::ATOMIC_LOAD, MVT::v4f16, MVT::i64);
+
+    setOperationAction(ISD::ATOMIC_LOAD, MVT::v8f16, Promote);
+    AddPromotedToType(ISD::ATOMIC_LOAD, MVT::v8f16, MVT::v4i32);
 
     setOperationAction(ISD::STORE, MVT::v4i16, Promote);
     AddPromotedToType(ISD::STORE, MVT::v4i16, MVT::v2i32);
@@ -19689,6 +19698,27 @@ getPrivateAtomicExpansionKind(const GCNSubtarget &STI) {
              : TargetLowering::AtomicExpansionKind::NotAtomic;
 }
 
+/// Returns true if \p Ty is a vector float type that AMDGPU supports for
+/// atomic load. These types are promoted to an equivalently sized integer
+/// type before instruction selection, so the backend needs to be told
+/// explicitly which vector types are allowed through the atomic expand pass.
+/// TODO: Support atomic store for these types.
+static bool isSupportedAtomicVectorType(Type *Ty) {
+  auto *VT = dyn_cast<FixedVectorType>(Ty);
+  if (!VT)
+    return false;
+
+  Type *EltTy = VT->getElementType();
+  unsigned NumElts = VT->getNumElements();
+  // Support v2f32, v4f32.
+  if (EltTy->isFloatTy())
+    return NumElts == 2 || NumElts == 4;
+  // Support v2f16, v4f16, v8f16.
+  if (EltTy->isHalfTy())
+    return NumElts == 2 || NumElts == 4 || NumElts == 8;
+  return false;
+}
+
 TargetLowering::AtomicExpansionKind
 SITargetLowering::shouldExpandAtomicRMWInIR(const AtomicRMWInst *RMW) const {
   unsigned AS = RMW->getPointerAddressSpace();
@@ -19975,29 +20005,42 @@ SITargetLowering::shouldExpandAtomicRMWInIR(const AtomicRMWInst *RMW) const {
 
 TargetLowering::AtomicExpansionKind
 SITargetLowering::shouldExpandAtomicLoadInIR(LoadInst *LI) const {
-  return LI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS
-             ? getPrivateAtomicExpansionKind(*getSubtarget())
-             : AtomicExpansionKind::None;
+  if (LI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS)
+    return getPrivateAtomicExpansionKind(*getSubtarget());
+
+  const DataLayout &DL = LI->getDataLayout();
+  if (DL.getTypeSizeInBits(LI->getType()) > 64 &&
+      !isSupportedAtomicVectorType(LI->getType()))
+    return AtomicExpansionKind::CustomExpand;
+
+  return AtomicExpansionKind::None;
 }
 
 TargetLowering::AtomicExpansionKind
 SITargetLowering::shouldExpandAtomicStoreInIR(StoreInst *SI) const {
-  return SI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS
-             ? getPrivateAtomicExpansionKind(*getSubtarget())
-             : AtomicExpansionKind::None;
+  if (SI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS)
+    return getPrivateAtomicExpansionKind(*getSubtarget());
+
+  const DataLayout &DL = SI->getDataLayout();
+  if (DL.getTypeSizeInBits(SI->getValueOperand()->getType()) > 64)
+    return AtomicExpansionKind::CustomExpand;
+
+  return AtomicExpansionKind::None;
 }
 
 TargetLowering::AtomicExpansionKind
 SITargetLowering::shouldExpandAtomicCmpXchgInIR(
     const AtomicCmpXchgInst *CmpX) const {
   unsigned AddrSpace = CmpX->getPointerAddressSpace();
+  const DataLayout &DL = CmpX->getDataLayout();
+  if (DL.getTypeSizeInBits(CmpX->getCompareOperand()->getType()) > 64)
+    return AtomicExpansionKind::CustomExpand;
+
   if (AddrSpace == AMDGPUAS::PRIVATE_ADDRESS)
     return getPrivateAtomicExpansionKind(*getSubtarget());
 
   if (AddrSpace != AMDGPUAS::FLAT_ADDRESS || !flatInstrMayAccessPrivate(CmpX))
     return AtomicExpansionKind::None;
-
-  const DataLayout &DL = CmpX->getDataLayout();
 
   Type *ValTy = CmpX->getNewValOperand()->getType();
 
@@ -20383,12 +20426,28 @@ void SITargetLowering::emitExpandAtomicCmpXchg(AtomicCmpXchgInst *CI) const {
   if (CI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS)
     return convertScratchAtomicToFlatAtomic(CI, CI->getPointerOperandIndex());
 
+  const DataLayout &DL = CI->getDataLayout();
+  if (DL.getTypeSizeInBits(CI->getCompareOperand()->getType()) > 64) {
+    CI->getContext().emitError(CI, "unsupported cmpxchg");
+    CI->replaceAllUsesWith(PoisonValue::get(CI->getType()));
+    CI->eraseFromParent();
+    return;
+  }
+
   emitExpandAtomicAddrSpacePredicate(CI);
 }
 
 void SITargetLowering::emitExpandAtomicLoad(LoadInst *LI) const {
   if (LI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS)
     return convertScratchAtomicToFlatAtomic(LI, LI->getPointerOperandIndex());
+
+  const DataLayout &DL = LI->getDataLayout();
+  if (DL.getTypeSizeInBits(LI->getType()) > 64) {
+    LI->getContext().emitError(LI, "unsupported atomic load");
+    LI->replaceAllUsesWith(PoisonValue::get(LI->getType()));
+    LI->eraseFromParent();
+    return;
+  }
 
   llvm_unreachable(
       "Expand Atomic Load only handles SCRATCH -> FLAT conversion");
@@ -20397,6 +20456,13 @@ void SITargetLowering::emitExpandAtomicLoad(LoadInst *LI) const {
 void SITargetLowering::emitExpandAtomicStore(StoreInst *SI) const {
   if (SI->getPointerAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS)
     return convertScratchAtomicToFlatAtomic(SI, SI->getPointerOperandIndex());
+
+  const DataLayout &DL = SI->getDataLayout();
+  if (DL.getTypeSizeInBits(SI->getValueOperand()->getType()) > 64) {
+    SI->getContext().emitError(SI, "unsupported atomic store");
+    SI->eraseFromParent();
+    return;
+  }
 
   llvm_unreachable(
       "Expand Atomic Store only handles SCRATCH -> FLAT conversion");

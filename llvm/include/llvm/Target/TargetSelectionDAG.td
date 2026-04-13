@@ -2141,6 +2141,12 @@ def atomic_load_nonext_128 :
   let MemoryVT = i128;
 }
 
+def atomic_load_nonext_v4i32 :
+  PatFrag<(ops node:$ptr), (atomic_load_nonext node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let MemoryVT = v4i32;
+}
+
 def atomic_load_zext_8 :
   PatFrag<(ops node:$ptr), (atomic_load_zext node:$ptr)> {
   let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?

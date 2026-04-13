@@ -2101,9 +2101,12 @@ let OtherPredicates = [HasFlatAddressSpace], True16Predicate = UseRealTrue16Inst
 }
 
 defm : FlatLoadPats <FLAT_LOAD_DWORD, atomic_load_nonext_32_flat, i32>;
+defm : FlatLoadPats <FLAT_LOAD_DWORD, atomic_load_nonext_32_flat, v2i16>;
 defm : FlatLoadPats <FLAT_LOAD_DWORDX2, atomic_load_nonext_64_flat, i64>;
+defm : FlatLoadPats <FLAT_LOAD_DWORDX2, atomic_load_nonext_64_flat, v4i16>;
 defm : FlatLoadPats <FLAT_LOAD_DWORDX2, atomic_load_nonext_64_flat, v2i32>;
 defm : FlatLoadPats <FLAT_LOAD_DWORDX4, atomic_load_nonext_128_flat, v4i32>;
+defm : FlatLoadPats <FLAT_LOAD_DWORDX4, atomic_load_nonext_v4i32_flat, v4i32>;
 
 defm : FlatStorePats <FLAT_STORE_BYTE, truncstorei8_flat, i32>;
 defm : FlatStorePats <FLAT_STORE_SHORT, truncstorei16_flat, i32>;
@@ -2281,9 +2284,12 @@ defm : GlobalFLATStorePats <GLOBAL_STORE_DWORDX4, store_global, vt>;
 // the memory legalizer will set the cache bits and insert the
 // appropriate waits.
 defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORD, atomic_load_nonext_32_global, i32>;
+defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORD, atomic_load_nonext_32_global, v2i16>;
 defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORDX2, atomic_load_nonext_64_global, i64>;
 defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORDX2, atomic_load_nonext_64_global, v2i32>;
+defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORDX2, atomic_load_nonext_64_global, v4i16>;
 defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORDX4, atomic_load_nonext_128_global, v4i32>;
+defm : GlobalFLATLoadPats <GLOBAL_LOAD_DWORDX4, atomic_load_nonext_v4i32_global, v4i32>;
 
 defm : GlobalFLATStorePats <GLOBAL_STORE_BYTE, truncstorei8_global, i32>;
 defm : GlobalFLATStorePats <GLOBAL_STORE_SHORT, truncstorei16_global, i32>;

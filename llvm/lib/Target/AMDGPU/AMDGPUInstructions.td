@@ -513,6 +513,10 @@ def atomic_load_nonext_128_#as : PatFrag<(ops node:$ptr), (atomic_load_nonext_12
   let IsAtomic = 1;
 }
 
+def atomic_load_nonext_v4i32_#as : PatFrag<(ops node:$ptr), (atomic_load_nonext_v4i32 node:$ptr)> {
+  let IsAtomic = 1;
+}
+
 def atomic_load_zext_8_#as : PatFrag<(ops node:$ptr), (atomic_load_zext_8 node:$ptr)> {
   let IsAtomic = 1;
 }
