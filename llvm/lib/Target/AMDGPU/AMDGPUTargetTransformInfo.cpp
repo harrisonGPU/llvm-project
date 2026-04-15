@@ -428,6 +428,10 @@ bool GCNTTIImpl::isLegalToVectorizeStoreChain(unsigned ChainSizeInBytes,
   return isLegalToVectorizeMemChain(ChainSizeInBytes, Alignment, AddrSpace);
 }
 
+unsigned GCNTTIImpl::getMaxAtomicVectorSizeInBits(unsigned AddrSpace) const {
+  return ST->getTargetLowering()->getMaxAtomicSizeInBitsSupported();
+}
+
 uint64_t GCNTTIImpl::getMaxMemIntrinsicInlineSizeThreshold() const {
   return 1024;
 }
